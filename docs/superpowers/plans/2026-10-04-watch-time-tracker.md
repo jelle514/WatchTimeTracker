@@ -18,7 +18,7 @@
 - Only `translations/en.json`, no `strings.json`.
 - Native unit minutes (float, never rounded while accumulating). `suggested_unit_of_measurement: h`, `suggested_display_precision: 1`. `device_class: duration`, `state_class: total_increasing`.
 - Unique IDs: `{subentry_id}_activity`, `{subentry_id}_watch_{source_key}`, `combined_watch_{source_key}`.
-- The activity sensor never reports a literal `"unknown"` string. "Unknown app" has the source key `unknown_app`.
+- The activity sensor never reports a literal `"unknown"` string. "Unknown app" has the source key `unknown_app`. "Unknown app" counts only while the TV reports `playing`, whatever the default mode (the LG home screen reports `on` with no `source`).
 - Durations use a monotonic clock (`time.monotonic`). Downtime is never credited.
 - `Store` is the only source of truth (no `RestoreSensor`).
 - `tracker.py` and `app_names.py` have no Home Assistant imports.
@@ -86,6 +86,8 @@ media_player.lg_webos_tv_oled55c34la | unavailable
 ```
 
 `..._2` is the LG's built-in Chromecast and becomes the Woonkamer TV's extra activity entity. The test `test_casting_to_lg_uses_builtin_chromecast` (Task 4) replays this observation.
+
+Home screen: the LG reports `on` with no `source` and `..._2` is `off`, which looks exactly like an unknown app. "Unknown app" therefore counts only while `playing`. `test_home_screen_is_not_counted` (Task 4) replays this.
 
 PC on HDMI: the LG reports `on` with `source: PC` and `..._2` is `off`. HDMI sources therefore need the per-source "count whenever open" mode, as designed. `test_per_source_mode` (Task 4) replays this.
 
@@ -924,9 +926,14 @@ def test_exceptions_flip_app_open_default() -> None:
     assert counting_app("paused", "plex", MODE_APP_OPEN, {"plex"}) is None
 
 
-def test_unknown_app_always_uses_default() -> None:
-    assert effective_mode(UNKNOWN_APP_KEY, MODE_PLAYING_ONLY, {UNKNOWN_APP_KEY}) == (
-        MODE_PLAYING_ONLY
+def test_unknown_app_counts_only_while_playing() -> None:
+    for default in (MODE_PLAYING_ONLY, MODE_APP_OPEN):
+        assert effective_mode(UNKNOWN_APP_KEY, default, {UNKNOWN_APP_KEY}) == (
+            MODE_PLAYING_ONLY
+        )
+    assert counting_app("on", UNKNOWN_APP_KEY, MODE_APP_OPEN, set()) is None
+    assert counting_app("playing", UNKNOWN_APP_KEY, MODE_APP_OPEN, set()) == (
+        UNKNOWN_APP_KEY
     )
 
 
@@ -999,7 +1006,10 @@ type TrackerState = Idle | Counting | Grace
 
 def effective_mode(app_key: str, default_mode: str, exceptions: Collection[str]) -> str:
     """Return the counting mode for an app on one device."""
-    if app_key == UNKNOWN_APP_KEY or app_key not in exceptions:
+    if app_key == UNKNOWN_APP_KEY:
+        # Without a known app (e.g. a home screen), only playback shows watching.
+        return MODE_PLAYING_ONLY
+    if app_key not in exceptions:
         return default_mode
     return MODE_APP_OPEN if default_mode == MODE_PLAYING_ONLY else MODE_PLAYING_ONLY
 
@@ -1142,6 +1152,7 @@ git commit -m "feat: add counting decision and session state machine"
     - `diagnostics() -> dict`
   - `__init__.py`: `RuntimeData(store, hub, devices: dict[str, TrackedDevice])`, `type WatchTimeConfigEntry = ConfigEntry[RuntimeData]`, `PLATFORMS`.
   - Entity IDs used by tests (device "LG", combined device "All TVs"): `sensor.lg_activity`, `sensor.lg_youtube_watch_time`, `sensor.all_tvs_youtube_watch_time`.
+  - `test_home_screen_is_not_counted` replays the Task 0 home-screen observation (LG `on`, no `source`, `app_open` default → not counted, activity `idle`).
   - `test_casting_to_lg_uses_builtin_chromecast` replays the Task 0 observation: LG `playing` with no `source`, plus `media_player.lg_webos_tv_oled55c34la_2` reporting `app_name: F1TV Chromecast`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1296,6 +1307,17 @@ async def test_unknown_app_is_credited(hass: HomeAssistant, clock: FakeClock) ->
     assert minutes(hass, "sensor.slaapkamer_unknown_app_watch_time") == pytest.approx(
         1.0, abs=0.1
     )
+
+
+async def test_home_screen_is_not_counted(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    # Observed: on the home screen the LG reports "on" without a source.
+    set_lg(hass, "on")
+    await setup(hass, lg_entry(default_mode=MODE_APP_OPEN))
+    await clock.advance(120)
+    assert hass.states.get(LG_ACTIVITY).state == "idle"
+    assert hass.states.get("sensor.lg_unknown_app_watch_time") is None
 
 
 async def test_extra_entity_and_override(hass: HomeAssistant, clock: FakeClock) -> None:
@@ -2058,7 +2080,7 @@ The `{app}` placeholder comes from each sensor's `_attr_translation_placeholders
 - [ ] **Step 9: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `60 passed`, lint clean.
+Expected: `61 passed`, lint clean.
 
 - [ ] **Step 10: Commit**
 
@@ -2253,7 +2275,7 @@ async def _async_update_listener(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/ruff check --fix tests/test_sensor.py && .venv/bin/ruff format . && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `63 passed`, lint clean.
+Expected: `64 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -2912,7 +2934,7 @@ Design notes:
 - [ ] **Step 5: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `70 passed`, lint clean.
+Expected: `71 passed`, lint clean.
 
 - [ ] **Step 6: Commit**
 
@@ -3013,7 +3035,7 @@ async def async_get_config_entry_diagnostics(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `71 passed`, lint clean.
+Expected: `72 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3186,7 +3208,7 @@ Each TV gets an **Activity** sensor and a **watch time** sensor per source. The 
 
 Sources that never report `playing` need the second mode. On LG webOS TVs this is typically every **HDMI input** (PC, game consoles). Leave the TV's default on *Only while playing* and pick those sources on the **Counting mode per source** screen. The choice is per TV, because TVs report states differently: the same app can count only while playing on one TV and whenever it's open on another.
 
-Time while the app can't be identified is counted as **Unknown app**, using the TV's default mode.
+Time while the app can't be identified is counted as **Unknown app**, but only while the TV reports `playing`, whatever the TV's default mode. That keeps home screens from being counted.
 
 ## Grace period
 
@@ -3214,7 +3236,7 @@ Deleting a tracked TV removes its device, sensors and per-TV totals. The combine
 - [ ] **Step 5: Full verification**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check . && python3 -c "import json; json.load(open('hacs.json')); json.load(open('custom_components/watch_time_tracker/manifest.json')); json.load(open('custom_components/watch_time_tracker/translations/en.json'))"`
-Expected: `71 passed`, lint clean, no JSON errors.
+Expected: `72 passed`, lint clean, no JSON errors.
 
 - [ ] **Step 6: Commit and check CI**
 

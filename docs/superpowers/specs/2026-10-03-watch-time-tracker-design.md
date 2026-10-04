@@ -29,7 +29,7 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 | Sensor type | Running totals, `total_increasing`. Period sensors may be spin-offs later |
 | Unit | Native unit is minutes, stored as a float and never rounded during accumulation. Displayed in hours with 1 decimal by default |
 | App name normalisation | A built-in mapping that user overrides take priority over. Raw values can be marked as ignored |
-| Unidentified apps | Time counted while the app can't be identified goes to an "Unknown app" source instead of being lost |
+| Unidentified apps | Time while the app can't be identified goes to an "Unknown app" source instead of being lost, but only while the TV reports `playing`, whatever its default mode (a home screen looks the same as an unknown app) |
 | Persistence | `Store` is the only source of truth (no `RestoreSensor`) |
 | Durations | Measured with a monotonic clock, not wall-clock time |
 | Distribution | HACS custom repository and manual copy |
@@ -98,7 +98,7 @@ The flow has a second step, **"Counting mode per source"**:
 - The options are the display names from the media player's current `source_list` plus the sources already known for this device (stored totals). Custom values can be typed, for apps that haven't been seen yet.
 - Selections are stored as source keys (resolved through the name mapping), so they match whatever raw value the TV reports.
 - The default mode and the list belong to this TV only, because TVs report states differently. The same source can use a different mode on another TV (e.g. Plex counts only while playing on the LG, but whenever it's open on the Chromecast).
-- "Unknown app" always uses the default mode.
+- "Unknown app" always counts only while playing, whatever the default mode, and can't be put in the list.
 - The reconfigure flow has the same two steps.
 
 - The same media player cannot be tracked by two sub-entries; the flow aborts with an error. This is checked in both the create and the reconfigure flow.
@@ -181,7 +181,7 @@ At every state change of the media player or the extra entity, the device works 
   - `playing_only`: the media player's state is `playing`
   - `app_open`: the media player's state is not one of `off`, `unavailable`, `unknown`, `standby`
 
-  The app is detected first, then its mode is looked up: the opposite of the default if the app's source key is in the per-source list, otherwise the default. If no app can be identified, `app` is "Unknown app" and the default mode applies.
+  The app is detected first, then its mode is looked up: the opposite of the default if the app's source key is in the per-source list, otherwise the default. If no app can be identified, `app` is "Unknown app" and it counts only while `playing`, whatever the default mode. On the LG the home screen reports `on` with no `source`, which looks exactly like an unknown app, so this keeps home-screen time out of the totals even with an `app_open` default.
 - **NotCounting** otherwise.
 
 ### State machine (`tracker.py`)
@@ -263,6 +263,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
     - both counting modes
     - per-source mode: an HDMI source counts while `on` and an app on the same TV counts only while `playing`
     - switching between sources with different modes
+    - "Unknown app" counts only while playing, even with an `app_open` default
     - a grace period of 0
     - live ticks don't double-count
     - negative time differences
@@ -275,7 +276,8 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
   - activity sensor states, including "Unknown app"
   - ignored apps are not counted in either mode
   - per-source step: options from `source_list` and stored sources, custom values, labels follow the default mode, selections stored as source keys
-  - unidentified apps are credited to "Unknown app"
+  - unidentified apps are credited to "Unknown app" while playing
+  - the home screen (`on`, no source) is not counted with an `app_open` default
   - credits reach the device and combined sensors
   - totals survive a restart
   - removing a sub-entry removes its entities and stored data and keeps the combined totals

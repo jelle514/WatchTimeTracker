@@ -32,7 +32,7 @@ media_player.lg_webos_tv_oled55c34la_2  | off         |
 media_player.lg_webos_tv_oled55c34la    | unavailable |
 ```
 
-No app can be identified, so the raw app is "Unknown app". With the LG's default `playing_only` it isn't counted (`on` ≠ `playing`) and the activity sensor shows `idle`, which is correct. With an `app_open` default, home-screen time would be counted as "Unknown app".
+No app can be identified, so the raw app is "Unknown app". With the LG's default `playing_only` it isn't counted (`on` ≠ `playing`) and the activity sensor shows `idle`, which is correct. Because this looks exactly like an unknown app, "Unknown app" now counts only while `playing`, so the home screen is never counted, even with an `app_open` default.
 
 ### Still to record
 
