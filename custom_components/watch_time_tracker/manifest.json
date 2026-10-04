@@ -1,0 +1,13 @@
+{
+  "domain": "watch_time_tracker",
+  "name": "Watch Time Tracker",
+  "codeowners": ["@jelle514"],
+  "config_flow": true,
+  "documentation": "https://github.com/jelle514/WatchTimeTracker",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/jelle514/WatchTimeTracker/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

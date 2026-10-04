@@ -1,0 +1,12 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Track how long each app or source is watched on your TVs. After setup, add each TV with \"Add tracked TV\"."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Watch Time Tracker is already set up. Add more TVs to the existing entry."
+    }
+  }
+}
