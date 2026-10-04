@@ -24,11 +24,20 @@ media_player.lg_webos_tv_oled55c34la    | unavailable |
 
 HDMI input reports `on`, not `playing`, so it is never counted in `playing_only`. PC (and presumably Nintendo Switch Game Console and HDMI 4) go in the LG's "Sources that count whenever they're open" list. The README's HDMI advice stands.
 
+### Home screen (2026-10-04)
+
+```
+media_player.lg_webos_smart_tv          | on          | device_class: tv, source_list: [same]   (no source)
+media_player.lg_webos_tv_oled55c34la_2  | off         |
+media_player.lg_webos_tv_oled55c34la    | unavailable |
+```
+
+No app can be identified, so the raw app is "Unknown app". With the LG's default `playing_only` it isn't counted (`on` ≠ `playing`) and the activity sensor shows `idle`, which is correct. With an `app_open` default, home-screen time would be counted as "Unknown app".
+
 ### Still to record
 
 - A native app playing (YouTube, Netflix): is `source` set, and is `..._2` `off`?
 - Several short YouTube videos back to back: the state between videos and how long the gap lasts.
-- The home screen.
 
 ## Slaapkamer TV (Chromecast with Google TV)
 
