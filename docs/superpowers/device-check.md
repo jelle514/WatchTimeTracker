@@ -50,7 +50,18 @@ A native app reports `playing` with `source` set, and the built-in Chromecast is
 
 ## Slaapkamer TV (Chromecast with Google TV)
 
+### Home screen (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on  | app_id: com.google.android.apps.tv.launcherx, app_name: com.google.android.apps.tv.launcherx, device_class: tv
+remote.slaapkamer_tv          | on  | current_activity: com.google.android.apps.tv.launcherx
+media_player.chromecast       | off |
+```
+
+The Google Cast entity (`media_player.chromecast`) is `off` while the TV is on, so it can't be the media player that decides on/off for this TV. The Android TV Remote media player (`media_player.slaapkamer_tv_2`) reports `on` and the app. The launcher value is already in the built-in table as ignored, so the home screen isn't counted. Still open: does `slaapkamer_tv_2` ever report `playing`, or does `chromecast` turn `playing` during native app playback? That decides which entity is the media player and whether this TV needs the `app_open` default.
+
+Also re-confirmed the same moment: LG casting F1 TV via the built-in Chromecast → LG `playing` with no `source`, `..._2` `playing` with `app_name: F1TV Chromecast`.
+
 ### Still to record
 
-- The home screen.
 - YouTube, Netflix, Plex and Disney+, each while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
