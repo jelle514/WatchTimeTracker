@@ -100,6 +100,7 @@ The flow has a second step, **"Counting mode per source"**:
 - The default mode and the list belong to this TV only, because TVs report states differently. The same source can use a different mode on another TV (e.g. Plex counts only while playing on the LG, but whenever it's open on the Chromecast).
 - "Unknown app" always counts only while playing, whatever the default mode, and can't be put in the list.
 - The reconfigure flow has the same two steps.
+- When reconfigure changes the default mode, the list is cleared (its entries would mean the opposite) and the sources step says so.
 
 - The same media player cannot be tracked by two sub-entries; the flow aborts with an error. This is checked in both the create and the reconfigure flow.
 - A reconfigure flow can change every field. Changing the media player keeps the device's totals.

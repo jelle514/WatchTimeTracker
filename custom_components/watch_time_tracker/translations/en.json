@@ -74,6 +74,18 @@
             "count_while_open": "For sources that never report playing, such as HDMI inputs and game consoles.",
             "count_only_while_playing": "For apps that reliably report playing."
           }
+        },
+        "sources_cleared": {
+          "title": "Counting mode per source",
+          "description": "The default counting mode changed, so the previous list was cleared. Pick the sources on this TV that use the other counting mode. You can type an app that hasn't been seen yet.",
+          "data": {
+            "count_while_open": "Sources that count whenever they're open",
+            "count_only_while_playing": "Sources that count only while playing"
+          },
+          "data_description": {
+            "count_while_open": "For sources that never report playing, such as HDMI inputs and game consoles.",
+            "count_only_while_playing": "For apps that reliably report playing."
+          }
         }
       },
       "abort": {

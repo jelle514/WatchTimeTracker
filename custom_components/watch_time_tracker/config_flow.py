@@ -43,6 +43,7 @@ from .const import (
     MODE_PLAYING_ONLY,
     MODES,
     SUBENTRY_TYPE_DEVICE,
+    UNKNOWN_APP_KEY,
 )
 
 TITLE = "Watch Time Tracker"
@@ -116,6 +117,7 @@ class TrackedDeviceSubentryFlow(ConfigSubentryFlow):
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+        self._exceptions_cleared = False
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -145,13 +147,20 @@ class TrackedDeviceSubentryFlow(ConfigSubentryFlow):
             if not name:
                 state = self.hass.states.get(media_player)
                 name = state.name if state else media_player
+            mode_exceptions = current.get(CONF_MODE_EXCEPTIONS, [])
+            if self.source == "reconfigure" and user_input[
+                CONF_DEFAULT_MODE
+            ] != current.get(CONF_DEFAULT_MODE):
+                # The old entries would now mean the opposite.
+                mode_exceptions = []
+                self._exceptions_cleared = True
             self._data = {
                 CONF_NAME: name,
                 CONF_MEDIA_PLAYER: media_player,
                 CONF_EXTRA_ENTITY: user_input.get(CONF_EXTRA_ENTITY),
                 CONF_DEFAULT_MODE: user_input[CONF_DEFAULT_MODE],
                 CONF_GRACE_PERIOD: int(user_input[CONF_GRACE_PERIOD]),
-                CONF_MODE_EXCEPTIONS: current.get(CONF_MODE_EXCEPTIONS, []),
+                CONF_MODE_EXCEPTIONS: mode_exceptions,
             }
             return await self.async_step_sources()
 
@@ -204,9 +213,13 @@ class TrackedDeviceSubentryFlow(ConfigSubentryFlow):
 
         if user_input is not None:
             keys: set[str] = set()
+            offered = {option["value"] for option in self._source_options(overrides)}
             for value in user_input.get(field, []):
-                if resolved := resolve(value, overrides):
+                if value in offered:
+                    keys.add(value)
+                elif resolved := resolve(value, overrides):
                     keys.add(resolved.key)
+            keys.discard(UNKNOWN_APP_KEY)
             self._data[CONF_MODE_EXCEPTIONS] = sorted(keys)
             return self._async_finish()
 
@@ -225,7 +238,16 @@ class TrackedDeviceSubentryFlow(ConfigSubentryFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="sources", data_schema=schema)
+        return self.async_show_form(
+            step_id="sources_cleared" if self._exceptions_cleared else "sources",
+            data_schema=schema,
+        )
+
+    async def async_step_sources_cleared(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Same as the sources step, with a notice that the list was cleared."""
+        return await self.async_step_sources(user_input)
 
     def _async_finish(self) -> SubentryFlowResult:
         title = self._data.pop(CONF_NAME)

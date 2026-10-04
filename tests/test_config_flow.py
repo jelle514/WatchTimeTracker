@@ -220,3 +220,105 @@ async def test_reconfigure_to_taken_media_player_aborts(hass: HomeAssistant) -> 
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_tracked"
+
+
+async def test_reconfigure_default_mode_change_clears_sources(
+    hass: HomeAssistant,
+) -> None:
+    set_lg(hass, "on")
+    entry = await setup(
+        hass, make_entry(device_subentry(LG_SUBENTRY, "LG", LG, mode_exceptions=["pc"]))
+    )
+    result = await _start_reconfigure(hass, entry.entry_id, LG_SUBENTRY)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_MEDIA_PLAYER: LG,
+            CONF_DEFAULT_MODE: MODE_APP_OPEN,
+            CONF_GRACE_PERIOD: 60,
+        },
+    )
+    assert result["step_id"] == "sources_cleared"
+    field = next(iter(result["data_schema"].schema))
+    assert str(field) == FIELD_COUNT_ONLY_WHILE_PLAYING
+    assert field.default() == []
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {FIELD_COUNT_ONLY_WHILE_PLAYING: []}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+    data = entry.subentries[LG_SUBENTRY].data
+    assert data[CONF_MODE_EXCEPTIONS] == []
+    assert data[CONF_DEFAULT_MODE] == MODE_APP_OPEN
+
+
+async def _reconfigure_sources(hass: HomeAssistant, entry, selected: list[str]):
+    result = await _start_reconfigure(hass, entry.entry_id, LG_SUBENTRY)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_MEDIA_PLAYER: LG,
+            CONF_DEFAULT_MODE: MODE_PLAYING_ONLY,
+            CONF_GRACE_PERIOD: 60,
+        },
+    )
+    assert result["step_id"] == "sources"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {FIELD_COUNT_WHILE_OPEN: selected}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+    return entry.subentries[LG_SUBENTRY].data[CONF_MODE_EXCEPTIONS]
+
+
+async def test_sources_keep_offered_key_despite_override(hass: HomeAssistant) -> None:
+    set_lg(hass, "on")
+    entry = await setup(
+        hass,
+        make_entry(
+            device_subentry(LG_SUBENTRY, "LG", LG, mode_exceptions=["pc"]),
+            options={CONF_NAME_OVERRIDES: "PC = Gaming PC"},
+        ),
+    )
+    entry.runtime_data.devices[LG_SUBENTRY].ensure_source("pc", "PC")
+    assert await _reconfigure_sources(hass, entry, ["pc"]) == ["pc"]
+
+
+async def test_sources_drop_unknown_app(hass: HomeAssistant) -> None:
+    set_lg(hass, "on")
+    entry = await setup(hass, make_entry(device_subentry(LG_SUBENTRY, "LG", LG)))
+    stored = await _reconfigure_sources(hass, entry, ["Unknown app", "pc"])
+    assert stored == ["pc"]
+
+
+async def test_reconfigure_to_other_media_player_keeps_totals(
+    hass: HomeAssistant,
+) -> None:
+    set_lg(hass, "on")
+    hass.states.async_set("media_player.other_tv", "on", {"friendly_name": "Other"})
+    entry = await setup(hass, make_entry(device_subentry(LG_SUBENTRY, "LG", LG)))
+    device = entry.runtime_data.devices[LG_SUBENTRY]
+    device.ensure_source("plex", "Plex")
+    device.totals["plex"]["minutes"] = 12.5
+
+    result = await _start_reconfigure(hass, entry.entry_id, LG_SUBENTRY)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_MEDIA_PLAYER: "media_player.other_tv",
+            CONF_DEFAULT_MODE: MODE_PLAYING_ONLY,
+            CONF_GRACE_PERIOD: 60,
+        },
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {FIELD_COUNT_WHILE_OPEN: []}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+
+    assert entry.subentries[LG_SUBENTRY].data[CONF_MEDIA_PLAYER] == (
+        "media_player.other_tv"
+    )
+    totals = entry.runtime_data.devices[LG_SUBENTRY].totals
+    assert totals["plex"] == {"display_name": "Plex", "minutes": 12.5}
