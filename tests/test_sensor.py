@@ -1,5 +1,6 @@
 """End-to-end tracking: entity states in, sensor states out."""
 
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 import pytest
@@ -9,6 +10,7 @@ from custom_components.watch_time_tracker.const import (
     DOMAIN,
     MODE_APP_OPEN,
 )
+from custom_components.watch_time_tracker.storage import STORAGE_KEY
 
 from .conftest import (
     CAST,
@@ -323,3 +325,60 @@ async def test_missing_media_player_does_not_fail(
     set_lg(hass, "playing", "YouTube")
     await hass.async_block_till_done()
     assert hass.states.get(LG_ACTIVITY).state == "YouTube"
+
+
+async def test_stop_saves_open_session(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    set_lg(hass, "playing", "YouTube")
+    await setup(hass, lg_entry())
+    await clock.advance(90)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+    stored = hass_storage[STORAGE_KEY]["data"]
+    assert stored["devices"][LG_SUBENTRY]["youtube"]["minutes"] == pytest.approx(1.5)
+    assert stored["combined"]["youtube"]["minutes"] == pytest.approx(1.5)
+
+
+async def test_loads_stored_totals(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "devices": {
+                LG_SUBENTRY: {"plex": {"display_name": "Plex", "minutes": 90.0}},
+                "removed_tv": {"plex": {"display_name": "Plex", "minutes": 30.0}},
+            },
+            "combined": {"plex": {"display_name": "Plex", "minutes": 120.0}},
+        },
+    }
+    set_lg(hass, "off")
+    entry = await setup(hass, lg_entry())
+    # A sensor exists for a stored source that isn't in source_list, while the TV is off.
+    assert minutes(hass, "sensor.lg_plex_watch_time") == pytest.approx(90.0)
+    assert minutes(hass, "sensor.all_tvs_plex_watch_time") == pytest.approx(120.0)
+    assert hass.states.get(LG_ACTIVITY).state == "off"
+    # Totals of the removed sub-entry were dropped, combined kept.
+    assert "removed_tv" not in entry.runtime_data.store.device_ids()
+
+
+async def test_removing_subentry(hass: HomeAssistant, clock: FakeClock) -> None:
+    set_lg(hass, "playing", "YouTube")
+    entry = await setup(hass, lg_entry())
+    await clock.advance(60)
+
+    assert hass.config_entries.async_remove_subentry(entry, LG_SUBENTRY)
+    await hass.async_block_till_done()
+
+    assert er.async_get(hass).async_get(LG_YOUTUBE) is None
+    assert (
+        dr.async_get(hass).async_get_device_by_identifier(
+            (DOMAIN, LG_SUBENTRY), entry.entry_id
+        )
+        is None
+    )
+    assert LG_SUBENTRY not in entry.runtime_data.store.device_ids()
+    assert minutes(hass, ALL_YOUTUBE) == pytest.approx(1.0, abs=0.1)

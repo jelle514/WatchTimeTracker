@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.core import Event, HomeAssistant
 
 from .app_names import OverrideError, parse_overrides
 from .const import CONF_NAME_OVERRIDES, SUBENTRY_TYPE_DEVICE
@@ -35,6 +35,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WatchTimeConfigEntry) ->
     store = TotalsStore(hass)
     await store.async_load()
 
+    # Drop totals of removed sub-entries; combined totals are kept.
+    for subentry_id in store.device_ids():
+        if subentry_id not in entry.subentries:
+            store.remove_device(subentry_id)
+
     try:
         overrides = parse_overrides(entry.options.get(CONF_NAME_OVERRIDES, ""))
     except OverrideError as err:
@@ -53,6 +58,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WatchTimeConfigEntry) ->
 
     for device in devices.values():
         device.async_start()
+
+    async def _async_on_stop(_event: Event) -> None:
+        await _async_close_sessions(entry.runtime_data)
+
+    entry.async_on_unload(
+        hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, _async_on_stop)
+    )
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
@@ -66,3 +79,10 @@ async def _async_close_sessions(runtime: RuntimeData) -> None:
     for device in runtime.devices.values():
         device.async_stop()
     await runtime.store.async_save()
+
+
+async def _async_update_listener(
+    hass: HomeAssistant, entry: WatchTimeConfigEntry
+) -> None:
+    """Reload on any sub-entry or options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
