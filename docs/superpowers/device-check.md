@@ -126,6 +126,16 @@ remote.slaapkamer_tv          | on      | current_activity: com.google.android.a
 
 An app without a Google TV app runs in the Cast receiver (`mediashell`). Only the Cast entity names the app. Fix: `mediashell` is ignored in the built-in table, and detection skips ignored candidates, so the app comes from the Cast entity's `app_name`.
 
+### Disney+ open, nothing playing, right after casting F1 TV (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on        | app_id/app_name: com.disney.disneyplus, device_class: tv
+media_player.chromecast       | buffering | app_id: B3E81094, app_name: F1TV Chromecast   (stale cast session)
+remote.slaapkamer_tv          | on        | current_activity: com.disney.disneyplus
+```
+
+The Cast entity still shows the previous cast session. The app comes from the Android TV Remote player first (Disney+ via the built-in table), so the stale name isn't used, and `buffering` isn't `playing`, so nothing is counted, which is correct. Risk: a stale session that still says `playing` would make a newly opened app count while browsing.
+
 ### Still to record
 
-- Disney+, while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
+- Disney+ playing and paused: does the Cast entity switch to a Disney+ session with `playing`/`paused`? (Also shows whether the stale F1 TV session clears.)
