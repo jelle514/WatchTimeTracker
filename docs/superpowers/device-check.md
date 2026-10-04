@@ -82,6 +82,10 @@ remote.slaapkamer_tv          | on      | current_activity: com.netflix.ninja
 
 The Cast entity reports `playing` while Netflix is only open (browsing). For Netflix on this TV, Cast `playing` effectively means "app open", so browsing time will be counted. No entity reports anything better, so this is a device limit, not something the integration can fix.
 
+### Netflix playing (2026-10-04)
+
+Identical to "Netflix open, nothing playing": `slaapkamer_tv_2` `on` (`com.netflix.ninja`), `chromecast` `playing` (`app_name: Netflix`), remote `com.netflix.ninja`. Confirmed: browsing and watching Netflix can't be told apart on this TV.
+
 ### Still to record
 
 - YouTube paused: does `media_player.chromecast` switch to `paused`?
