@@ -34,9 +34,18 @@ media_player.lg_webos_tv_oled55c34la    | unavailable |
 
 No app can be identified, so the raw app is "Unknown app". With the LG's default `playing_only` it isn't counted (`on` ≠ `playing`) and the activity sensor shows `idle`, which is correct. Because this looks exactly like an unknown app, "Unknown app" now counts only while `playing`, so the home screen is never counted, even with an `app_open` default.
 
+### Native app: Live TV (2026-10-04)
+
+```
+media_player.lg_webos_smart_tv          | playing     | device_class: tv, media_content_type: channel, source: Live TV, source_list: [Disney+, HDMI 4, Live TV, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube]
+media_player.lg_webos_tv_oled55c34la_2  | off         |
+media_player.lg_webos_tv_oled55c34la    | unavailable |
+```
+
+A native app reports `playing` with `source` set, and the built-in Chromecast is `off`, so the LG's `source` wins and the detection order stands. "Live TV" only appears in `source_list` while it is in use. The integration creates a sensor whenever `source_list` changes, so this is handled.
+
 ### Still to record
 
-- A native app playing (YouTube, Netflix): is `source` set, and is `..._2` `off`?
 - Several short YouTube videos back to back: the state between videos and how long the gap lasts.
 
 ## Slaapkamer TV (Chromecast with Google TV)
