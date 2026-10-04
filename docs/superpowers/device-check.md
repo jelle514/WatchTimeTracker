@@ -166,6 +166,8 @@ remote.slaapkamer_tv          | on     | current_activity: com.disney.disneyplus
 
 The stale F1 TV cast session came back after the TV was off. The Cast entity can report a session for a different app than the one on screen, so its `playing` should only be trusted when its app matches the detected app.
 
+Cause (confirmed): the phone still thought it was casting F1 TV, keeping the cast session alive in the background. After stopping it on the phone, the TV went back to the home screen: `slaapkamer_tv_2` `on` (launcher), `chromecast` `off`, remote launcher. A cast session left open on a phone is a realistic case, so the Cast entity's state can belong to another app than the one on screen.
+
 ### Still to record
 
-- Disney+ playing once the F1 TV cast session is really gone (stop casting on the phone first).
+- Disney+ playing, now that the F1 TV cast session is gone.
