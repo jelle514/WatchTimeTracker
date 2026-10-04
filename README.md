@@ -19,7 +19,7 @@ Copy `custom_components/watch_time_tracker` into your Home Assistant `config/cus
 1. **Settings → Devices & services → Add integration → Watch Time Tracker.**
 2. On the Watch Time Tracker entry, choose **Add tracked TV** for each TV:
    - **Media player**: the TV's media player entity. Its state decides playing, on or off.
-   - **Extra activity entity** (optional): a remote or media player that names the current app when the media player doesn't, or says `playing` when the media player can't. The TV counts as playing when either entity says `playing`; the media player alone decides whether the TV is on. See the example setups below.
+   - **Extra activity entity** (optional): a remote or media player that names the current app when the media player doesn't, or says `playing` when the media player can't. The TV counts as playing when either entity says `playing`, but the extra entity's `playing` only counts when it names the same app as the one on screen (or names no app), so a cast session left open on a phone for another app isn't counted; the media player alone decides whether the TV is on. See the example setups below.
    - **Default counting mode** and **grace period**: see below.
 3. On the next screen, **Counting mode per source**, pick the sources on this TV that use the other counting mode.
 
@@ -64,6 +64,8 @@ com.google.android.apps.tv.launcherx = !ignore
 
 Changing a mapping after time has been counted starts a new sensor. The old sensor keeps its total and stops growing. Re-pick the source on the **Counting mode per source** screen if it used the other mode.
 
-## Removing a TV
+## Removing a TV or the integration
 
 Deleting a tracked TV removes its device, sensors and per-TV totals. The combined totals keep the time it contributed.
+
+Deleting the whole integration keeps its stored totals for now. If you add it again, the combined totals come back but the per-TV totals don't. A choice to restore or start fresh is planned.
