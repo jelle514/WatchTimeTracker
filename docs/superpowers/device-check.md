@@ -136,6 +136,16 @@ remote.slaapkamer_tv          | on        | current_activity: com.disney.disneyp
 
 The Cast entity still shows the previous cast session. The app comes from the Android TV Remote player first (Disney+ via the built-in table), so the stale name isn't used, and `buffering` isn't `playing`, so nothing is counted, which is correct. Risk: a stale session that still says `playing` would make a newly opened app count while browsing.
 
+### Disney+ playing (2026-10-04)
+
+Identical to "Disney+ open": `slaapkamer_tv_2` `on` (`com.disney.disneyplus`), `chromecast` still the stale F1 TV session as `buffering`. Disney+ doesn't report playback through the Cast entity at all, so it never counts as playing. Setup: tick Disney+ under "Sources that count whenever they're open" on the Slaapkamer TV.
+
+## Summary: Slaapkamer TV setup
+
+- Media player: `media_player.slaapkamer_tv_2` (Android TV Remote). Extra activity entity: `media_player.chromecast` (Google Cast).
+- Default counting mode: only while playing. Per-source list: Disney+.
+- YouTube and Plex are counted only while playing (the Cast entity reports `playing`/`paused`). Netflix counts whenever open (its Cast session says `playing` while browsing). Disney+ counts whenever open (per-source list). The home screen is never counted.
+
 ### Still to record
 
-- Disney+ playing and paused: does the Cast entity switch to a Disney+ session with `playing`/`paused`? (Also shows whether the stale F1 TV session clears.)
+- Nothing required.
