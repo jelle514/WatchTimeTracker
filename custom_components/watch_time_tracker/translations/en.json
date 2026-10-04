@@ -8,5 +8,15 @@
     "abort": {
       "single_instance_allowed": "Watch Time Tracker is already set up. Add more TVs to the existing entry."
     }
+  },
+  "entity": {
+    "sensor": {
+      "watch_time": {
+        "name": "{app} watch time"
+      },
+      "activity": {
+        "name": "Activity"
+      }
+    }
   }
 }
