@@ -62,6 +62,16 @@ The Google Cast entity (`media_player.chromecast`) is `off` while the TV is on, 
 
 Also re-confirmed the same moment: LG casting F1 TV via the built-in Chromecast → LG `playing` with no `source`, `..._2` `playing` with `app_name: F1TV Chromecast`.
 
+### YouTube playing (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on      | app_id/app_name: com.google.android.youtube.tv, device_class: tv
+media_player.chromecast       | playing | app_id: 2C6A6E3D, app_name: YouTube, media_content_type: video, media_title: <video title>
+remote.slaapkamer_tv          | on      | current_activity: com.google.android.youtube.tv
+```
+
+The Android TV Remote player (`slaapkamer_tv_2`) never says `playing`; it only knows on/off and the app. The Cast entity says `playing` with a friendly app name, but is `off` when no cast session is active (home screen). Neither entity alone gives both on/off and playing.
+
 ### Still to record
 
 - YouTube, Netflix, Plex and Disney+, each while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
