@@ -106,7 +106,16 @@ remote.slaapkamer_tv          | on      | current_activity: com.google.android.y
 
 Identical to native YouTube: casting opens the native app, so no cast-receiver package appears and the detection order stands. Unverified: casting an app that has no Google TV app (e.g. F1 TV) might show a receiver package on `slaapkamer_tv_2`.
 
+### YouTube paused (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on     | app_id/app_name: com.google.android.youtube.tv
+media_player.chromecast       | paused | app_id: 2C6A6E3D, app_name: YouTube, media_title: <video title>
+remote.slaapkamer_tv          | on     | current_activity: com.google.android.youtube.tv
+```
+
+The Cast entity reports `paused`, so the player state is `on` (not playing): the grace period applies and counting stops after it, as on the LG. YouTube is counted accurately on this TV; Netflix is not (see above).
+
 ### Still to record
 
-- YouTube paused: does `media_player.chromecast` switch to `paused`?
 - Disney+, while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
