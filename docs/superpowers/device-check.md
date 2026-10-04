@@ -138,14 +138,24 @@ The Cast entity still shows the previous cast session. The app comes from the An
 
 ### Disney+ playing (2026-10-04)
 
-Identical to "Disney+ open": `slaapkamer_tv_2` `on` (`com.disney.disneyplus`), `chromecast` still the stale F1 TV session as `buffering`. Disney+ doesn't report playback through the Cast entity at all, so it never counts as playing. Setup: tick Disney+ under "Sources that count whenever they're open" on the Slaapkamer TV.
+Identical to "Disney+ open": `slaapkamer_tv_2` `on` (`com.disney.disneyplus`), `chromecast` still the stale F1 TV session as `buffering`. Disney+ didn't report playback through the Cast entity here, so it would never count as playing. **Provisional:** the stale F1 TV cast session may have blocked it. Re-test Disney+ after a fresh start (TV on, open Disney+ directly, no casting before). If the Cast entity then shows Disney+ `playing`/`paused`, no per-source entry is needed; otherwise tick Disney+ under "Sources that count whenever they're open".
 
 ## Summary: Slaapkamer TV setup
 
 - Media player: `media_player.slaapkamer_tv_2` (Android TV Remote). Extra activity entity: `media_player.chromecast` (Google Cast).
-- Default counting mode: only while playing. Per-source list: Disney+.
-- YouTube and Plex are counted only while playing (the Cast entity reports `playing`/`paused`). Netflix counts whenever open (its Cast session says `playing` while browsing). Disney+ counts whenever open (per-source list). The home screen is never counted.
+- Default counting mode: only while playing. Per-source list: Disney+ (provisional, see above).
+- YouTube and Plex are counted only while playing (the Cast entity reports `playing`/`paused`). Netflix counts whenever open (its Cast session says `playing` while browsing). Disney+ counts whenever open if it's on the per-source list (provisional). The home screen is never counted.
+
+### TV off (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | off |
+media_player.chromecast       | off |   (stale F1 TV session cleared)
+remote.slaapkamer_tv          | off | current_activity: com.disney.disneyplus   (stale)
+```
+
+The main player being `off` wins: nothing is counted and the activity sensor shows `off`. The remote's stale `current_activity` is harmless.
 
 ### Still to record
 
-- Nothing required.
+- Disney+ after a fresh start (see "Disney+ playing").
