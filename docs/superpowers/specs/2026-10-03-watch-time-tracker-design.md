@@ -112,7 +112,7 @@ The flow has a second step, **"Counting mode per source"**:
 
 ### App detection
 
-The raw app value is the first non-empty value of:
+The raw app candidates are the non-empty values of, in this order:
 
 1. the media player's `source` attribute
 2. the media player's `app_name` attribute
@@ -120,11 +120,11 @@ The raw app value is the first non-empty value of:
 4. the extra entity's `source` attribute
 5. the extra entity's `app_name` attribute
 
-The raw value is resolved through the name mapping. User overrides are checked first, then the built-in table, then the raw value is used unchanged. A value that resolves to ignored is treated as "no app": the device is then NotCounting, whatever the counting mode.
+Each candidate is resolved through the name mapping: user overrides first, then the built-in table, then the raw value unchanged. The **first candidate that isn't ignored** is the app. Ignored candidates are skipped, so a Cast receiver package on the media player (`com.google.android.apps.mediashell`, observed while casting F1 TV to the Slaapkamer TV) falls through to the Cast entity's friendly `app_name`. If every candidate is ignored (e.g. a home screen launcher), the device is NotCounting, whatever the counting mode. If there are no candidates at all, the app is "Unknown app".
 
 The resolved display name gives the **source key**: `slugify(display_name)`, e.g. `youtube`. If the slug is empty (e.g. emoji-only or some non-Latin names), the key is `app_` plus the first 8 hex characters of the SHA-1 of the display name. Display names that give the same slug (e.g. `Disney+` and `Disney`) share one sensor; this is intended. Matching keys share a combined sensor.
 
-The built-in table starts with common Google TV / Android TV package names (YouTube, Netflix, Disney+, Plex, NPO Start, Prime Video, Spotify) and marks known launchers (e.g. the Google TV home screen) as ignored. It is updated with the values recorded during the Chromecast check (see "Before implementation").
+The built-in table starts with common Google TV / Android TV package names (YouTube, Netflix, Disney+, Plex, NPO Start, Prime Video, Spotify) and marks known launchers (e.g. the Google TV home screen) and the Google TV Cast receiver (`com.google.android.apps.mediashell`) as ignored. It is updated with the values recorded during the Chromecast check (see "Before implementation").
 
 ### Name mapping changes
 
@@ -244,7 +244,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
 | File | Job | Depends on |
 |---|---|---|
 | `const.py` | Domain, config keys, defaults | — |
-| `app_names.py` | Built-in table, override parsing, `resolve(raw, overrides) -> (key, display_name) \| IGNORED` | — |
+| `app_names.py` | Built-in table, override parsing, `resolve(raw, overrides)`, `detect_app(media_attrs, extra_attrs, overrides)` (first non-ignored candidate) | — |
 | `tracker.py` | The state machine above | — |
 | `storage.py` | Load, save and migrate totals | HA `Store` |
 | `hub.py` | Combined totals; receives credits from devices; announces new combined sources | `storage.py` |
@@ -257,7 +257,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
 ## Testing
 
 - **Unit tests (no HA):**
-  - `app_names`: built-in lookups, override priority, override parsing errors, `!ignore`, unknown values, slug keys, empty-slug hash fallback.
+  - `app_names`: built-in lookups, override priority, override parsing errors, `!ignore`, unknown values, slug keys, empty-slug hash fallback, detection order, skipping ignored candidates, all candidates ignored, no candidates.
   - `tracker` with a fake clock:
     - short gaps (between videos, brief pauses) shorter than the grace period are fully counted
     - a gap longer than the grace period is not counted
@@ -283,7 +283,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
   - per-source step: options from `source_list` and stored sources, custom values, labels follow the default mode, selections stored as source keys
   - unidentified apps are credited to "Unknown app" while playing
   - the home screen (`on`, no source) is not counted with an `app_open` default
-  - Google TV setup (Android TV Remote player + Cast entity): playing YouTube is counted, the home screen is not
+  - Google TV setup (Android TV Remote player + Cast entity): playing YouTube is counted, the home screen is not, a cast app without a Google TV app is named by the Cast entity
   - credits reach the device and combined sensors
   - totals survive a restart
   - removing a sub-entry removes its entities and stored data and keeps the combined totals

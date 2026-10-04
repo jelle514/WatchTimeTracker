@@ -504,7 +504,8 @@ git commit -m "feat: scaffold integration, test harness and main config flow"
   - `parse_overrides(text: str) -> dict[str, str | None]`. Keys are casefolded; `None` means ignored.
   - `make_key(display_name: str) -> str`
   - `resolve(raw: str, overrides: Mapping[str, str | None]) -> ResolvedApp | None`. Returns `None` when the value is ignored.
-  - `raw_app_value(media_attributes: Mapping, extra_attributes: Mapping | None) -> str | None`
+  - `raw_app_values(media_attributes: Mapping, extra_attributes: Mapping | None) -> list[str]`: every non-empty candidate, in detection order.
+  - `detect_app(media_attributes, extra_attributes, overrides) -> tuple[str | None, ResolvedApp | None]`: the first candidate that isn't ignored. Returns `(None, None)` when there are no candidates (the caller makes it "Unknown app") and `(first raw, None)` when every candidate is ignored.
   - `BUILTIN_NAMES: dict[str, str | None]`, `IGNORE_MARKER = "!ignore"`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -518,9 +519,10 @@ import pytest
 from custom_components.watch_time_tracker.app_names import (
     OverrideError,
     ResolvedApp,
+    detect_app,
     make_key,
     parse_overrides,
-    raw_app_value,
+    raw_app_values,
     resolve,
 )
 
@@ -597,11 +599,44 @@ def test_make_key_empty_slug_uses_hash() -> None:
 def test_raw_value_detection_order() -> None:
     media = {"app_name": "Netflix"}
     extra = {"current_activity": "com.google.android.youtube.tv", "source": "x"}
-    assert raw_app_value(media, extra) == "Netflix"
-    assert raw_app_value({"source": "PC", "app_name": "y"}, extra) == "PC"
-    assert raw_app_value({}, extra) == "com.google.android.youtube.tv"
-    assert raw_app_value({}, {"source": "  ", "app_name": "Plex"}) == "Plex"
-    assert raw_app_value({}, None) is None
+    assert raw_app_values(media, extra) == [
+        "Netflix",
+        "com.google.android.youtube.tv",
+        "x",
+    ]
+    assert raw_app_values({"source": "PC", "app_name": "y"}, None) == ["PC", "y"]
+    assert raw_app_values({}, {"source": "  ", "app_name": "Plex"}) == ["Plex"]
+    assert raw_app_values({}, None) == []
+
+
+def test_detect_app_uses_first_value() -> None:
+    assert detect_app({"source": "PC"}, {"app_name": "Plex"}, {}) == (
+        "PC",
+        ResolvedApp("pc", "PC"),
+    )
+
+
+def test_detect_app_skips_ignored_values() -> None:
+    # Observed: casting F1 TV to a Chromecast with Google TV. The Android TV
+    # Remote player reports the Cast receiver; the Cast entity names the app.
+    media = {"app_name": "com.google.android.apps.mediashell"}
+    extra = {"app_name": "F1TV Chromecast"}
+    assert detect_app(media, extra, {}) == (
+        "F1TV Chromecast",
+        ResolvedApp("f1tv_chromecast", "F1TV Chromecast"),
+    )
+
+
+def test_detect_app_all_ignored() -> None:
+    launcher = "com.google.android.apps.tv.launcherx"
+    assert detect_app({"app_name": launcher}, {"current_activity": launcher}, {}) == (
+        launcher,
+        None,
+    )
+
+
+def test_detect_app_nothing_to_detect() -> None:
+    assert detect_app({}, None, {}) == (None, None)
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -637,6 +672,8 @@ BUILTIN_NAMES: dict[str, str | None] = {
     # Home screens / launchers
     "com.google.android.apps.tv.launcherx": None,
     "com.google.android.tvlauncher": None,
+    # Cast receiver on Google TV: the real app name comes from the Cast entity
+    "com.google.android.apps.mediashell": None,
 }
 
 _RAW_ATTRIBUTE_ORDER: tuple[tuple[str, str], ...] = (
@@ -712,23 +749,41 @@ def resolve(raw: str, overrides: Mapping[str, str | None]) -> ResolvedApp | None
     return ResolvedApp(make_key(name), name)
 
 
-def raw_app_value(
+def raw_app_values(
     media_attributes: Mapping[str, Any],
     extra_attributes: Mapping[str, Any] | None,
-) -> str | None:
-    """Return the first non-empty raw app value, in the spec's detection order."""
+) -> list[str]:
+    """Return every non-empty raw app value, in the spec's detection order."""
     sources = {"media": media_attributes, "extra": extra_attributes or {}}
+    values = []
     for source, attribute in _RAW_ATTRIBUTE_ORDER:
         value = sources[source].get(attribute)
         if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
+            values.append(value.strip())
+    return values
+
+
+def detect_app(
+    media_attributes: Mapping[str, Any],
+    extra_attributes: Mapping[str, Any] | None,
+    overrides: Mapping[str, str | None],
+) -> tuple[str | None, ResolvedApp | None]:
+    """Return (raw value, app) for the first raw value that isn't ignored.
+
+    (None, None) when there is no raw value at all (an unknown app);
+    (first raw value, None) when every raw value is ignored.
+    """
+    values = raw_app_values(media_attributes, extra_attributes)
+    for raw in values:
+        if (resolved := resolve(raw, overrides)) is not None:
+            return raw, resolved
+    return (values[0] if values else None), None
 ```
 
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `20 passed`, lint clean.
+Expected: `24 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1141,7 +1196,7 @@ class Tracker:
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `51 passed`, lint clean.
+Expected: `55 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1161,7 +1216,7 @@ git commit -m "feat: add counting decision and session state machine"
 - Test: `tests/test_sensor.py`
 
 **Interfaces:**
-- Consumes: Task 2 (`resolve`, `raw_app_value`, `parse_overrides`, `OverrideError`, `ResolvedApp`), Task 3 (`Tracker`, `Counting`, `Grace`, `Credit`, `counting_app`, `effective_mode`), Task 1 constants and test helpers.
+- Consumes: Task 2 (`resolve`, `detect_app`, `parse_overrides`, `OverrideError`, `ResolvedApp`), Task 3 (`Tracker`, `Counting`, `Grace`, `Credit`, `counting_app`, `effective_mode`), Task 1 constants and test helpers.
 - Produces:
   - `storage.py`: `SourceTotal` (TypedDict with `display_name: str`, `minutes: float`), `type Totals = dict[str, SourceTotal]`, `STORAGE_KEY`, and `TotalsStore(hass)` with:
     - `async_load()`
@@ -1185,6 +1240,7 @@ git commit -m "feat: add counting decision and session state machine"
     - `diagnostics() -> dict`
   - `__init__.py`: `RuntimeData(store, hub, devices: dict[str, TrackedDevice])`, `type WatchTimeConfigEntry = ConfigEntry[RuntimeData]`, `PLATFORMS`.
   - Entity IDs used by tests (device "LG", combined device "All TVs"): `sensor.lg_activity`, `sensor.lg_youtube_watch_time`, `sensor.all_tvs_youtube_watch_time`.
+  - `test_casting_app_without_google_tv_app` replays casting F1 TV to the Slaapkamer TV: the Android TV Remote player reports the ignored Cast receiver (`com.google.android.apps.mediashell`), so the app name comes from the Cast entity.
   - `test_google_tv_cast_entity_supplies_playing` replays the Slaapkamer TV observations: Android TV Remote player `on` with a package name + Cast entity `playing` → counted; launcher + Cast `off` → not counted.
   - `test_home_screen_is_not_counted` replays the Task 0 home-screen observation (LG `on`, no `source`, `app_open` default → not counted, activity `idle`).
   - `test_casting_to_lg_uses_builtin_chromecast` replays the Task 0 observation: LG `playing` with no `source`, plus `media_player.lg_webos_tv_oled55c34la_2` reporting `app_name: F1TV Chromecast`.
@@ -1420,6 +1476,30 @@ async def test_google_tv_cast_entity_supplies_playing(
     )
 
 
+async def test_casting_app_without_google_tv_app(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    # Observed: casting F1 TV to the Slaapkamer TV. The Android TV Remote player
+    # reports the Cast receiver (ignored); the Cast entity names the app.
+    hass.states.async_set(
+        SLAAPKAMER_ATV, "on", {"app_name": "com.google.android.apps.mediashell"}
+    )
+    hass.states.async_set(CAST, "playing", {"app_name": "F1TV Chromecast"})
+    await setup(
+        hass,
+        make_entry(
+            device_subentry(
+                CAST_SUBENTRY, "Slaapkamer", SLAAPKAMER_ATV, extra_entity=CAST
+            )
+        ),
+    )
+    assert hass.states.get("sensor.slaapkamer_activity").state == "F1TV Chromecast"
+    await clock.advance(60)
+    assert minutes(
+        hass, "sensor.slaapkamer_f1tv_chromecast_watch_time"
+    ) == pytest.approx(1.0, abs=0.1)
+
+
 async def test_combined_sums_devices(hass: HomeAssistant, clock: FakeClock) -> None:
     set_lg(hass, "playing", "YouTube")
     hass.states.async_set(CAST, "playing", {"app_name": "YouTube"})
@@ -1636,7 +1716,7 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 
-from .app_names import ResolvedApp, raw_app_value, resolve
+from .app_names import ResolvedApp, detect_app, resolve
 from .const import (
     ACTIVITY_IDLE,
     ACTIVITY_OFF,
@@ -1767,14 +1847,13 @@ class TrackedDevice:
         extra = self.hass.states.get(self.extra_entity) if self.extra_entity else None
         self._sync_source_list(player)
 
-        self.raw_app = raw_app_value(
-            player.attributes if player else {}, extra.attributes if extra else None
+        self.raw_app, self.resolved_app = detect_app(
+            player.attributes if player else {},
+            extra.attributes if extra else None,
+            self._overrides,
         )
-        self.resolved_app = (
-            _UNKNOWN_APP
-            if self.raw_app is None
-            else resolve(self.raw_app, self._overrides)
-        )
+        if self.raw_app is None:
+            self.resolved_app = _UNKNOWN_APP
         player_state = combined_player_state(
             player.state if player else None, extra.state if extra else None
         )
@@ -1896,7 +1975,7 @@ class TrackedDevice:
 ```
 
 Key behaviour to preserve:
-- `_evaluate` runs on every state change of the media player or extra entity. It syncs `source_list` into sensors, detects and resolves the app (no raw value → "Unknown app"), combines the two entities' states with `combined_player_state`, asks `counting_app` for the per-source mode decision, feeds the tracker, then syncs timers and the activity state.
+- `_evaluate` runs on every state change of the media player or extra entity. It syncs `source_list` into sensors, detects the app with `detect_app` (ignored candidates are skipped; no candidate at all → "Unknown app"), combines the two entities' states with `combined_player_state`, asks `counting_app` for the per-source mode decision, feeds the tracker, then syncs timers and the activity state.
 - The grace timer exists only while the tracker is in `Grace`, and the 60 s live tick only while it is in `Counting`.
 
 - [ ] **Step 6: Implement the sensors**
@@ -2159,7 +2238,7 @@ The `{app}` placeholder comes from each sensor's `_attr_translation_placeholders
 - [ ] **Step 9: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `64 passed`, lint clean.
+Expected: `69 passed`, lint clean.
 
 - [ ] **Step 10: Commit**
 
@@ -2354,7 +2433,7 @@ async def _async_update_listener(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/ruff check --fix tests/test_sensor.py && .venv/bin/ruff format . && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `67 passed`, lint clean.
+Expected: `72 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3013,7 +3092,7 @@ Design notes:
 - [ ] **Step 5: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `74 passed`, lint clean.
+Expected: `79 passed`, lint clean.
 
 - [ ] **Step 6: Commit**
 
@@ -3114,7 +3193,7 @@ async def async_get_config_entry_diagnostics(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `75 passed`, lint clean.
+Expected: `80 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3326,7 +3405,7 @@ Deleting a tracked TV removes its device, sensors and per-TV totals. The combine
 - [ ] **Step 5: Full verification**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check . && python3 -c "import json; json.load(open('hacs.json')); json.load(open('custom_components/watch_time_tracker/manifest.json')); json.load(open('custom_components/watch_time_tracker/translations/en.json'))"`
-Expected: `75 passed`, lint clean, no JSON errors.
+Expected: `80 passed`, lint clean, no JSON errors.
 
 - [ ] **Step 6: Commit and check CI**
 

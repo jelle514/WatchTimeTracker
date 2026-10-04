@@ -116,6 +116,16 @@ remote.slaapkamer_tv          | on     | current_activity: com.google.android.yo
 
 The Cast entity reports `paused`, so the player state is `on` (not playing): the grace period applies and counting stops after it, as on the LG. YouTube is counted accurately on this TV; Netflix is not (see above).
 
+### Casting F1 TV from a phone (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on      | app_id/app_name: com.google.android.apps.mediashell, device_class: tv
+media_player.chromecast       | playing | app_id: B3E81094, app_name: F1TV Chromecast, media_content_type: video
+remote.slaapkamer_tv          | on      | current_activity: com.google.android.apps.mediashell
+```
+
+An app without a Google TV app runs in the Cast receiver (`mediashell`). Only the Cast entity names the app. Fix: `mediashell` is ignored in the built-in table, and detection skips ignored candidates, so the app comes from the Cast entity's `app_name`.
+
 ### Still to record
 
 - Disney+, while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
