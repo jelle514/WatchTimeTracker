@@ -96,8 +96,17 @@ remote.slaapkamer_tv          | on      | current_activity: com.plexapp.android
 
 Same pattern as YouTube: the package name maps to Plex via the built-in table, and the Cast entity supplies `playing`.
 
+### Casting YouTube from a phone (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on      | app_id/app_name: com.google.android.youtube.tv, device_class: tv
+media_player.chromecast       | playing | app_id: 2C6A6E3D, app_name: YouTube, media_content_type: video, media_title: <video title>
+remote.slaapkamer_tv          | on      | current_activity: com.google.android.youtube.tv
+```
+
+Identical to native YouTube: casting opens the native app, so no cast-receiver package appears and the detection order stands. Unverified: casting an app that has no Google TV app (e.g. F1 TV) might show a receiver package on `slaapkamer_tv_2`.
+
 ### Still to record
 
-- Casting from a phone to this TV (e.g. YouTube): which package does `slaapkamer_tv_2` report? If it's a cast receiver package, it would win over the Cast entity's friendly `app_name` in the detection order.
 - YouTube paused: does `media_player.chromecast` switch to `paused`?
 - Disney+, while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
