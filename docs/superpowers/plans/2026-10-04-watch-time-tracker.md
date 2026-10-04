@@ -1255,6 +1255,7 @@ git commit -m "feat: add counting decision and session state machine"
     - `diagnostics() -> dict`
   - `__init__.py`: `RuntimeData(store, hub, devices: dict[str, TrackedDevice])`, `type WatchTimeConfigEntry = ConfigEntry[RuntimeData]`, `PLATFORMS`.
   - Entity IDs used by tests (device "LG", combined device "All TVs"): `sensor.lg_activity`, `sensor.lg_youtube_watch_time`, `sensor.all_tvs_youtube_watch_time`.
+  - `test_cast_session_for_ignored_app_is_ignored`: an extra entity whose app is ignored never supplies `playing` (only "no raw candidate at all" counts as naming no app; `device.py` passes the `_IGNORED_EXTRA_APP` sentinel). Added in review.
   - `test_stale_cast_session_is_ignored` replays a phone keeping an F1 TV cast session open while Disney+ is on screen: the Cast entity's `playing` is for another app, so Disney+ isn't counted.
   - `test_casting_app_without_google_tv_app` replays casting F1 TV to the Slaapkamer TV: the Android TV Remote player reports the ignored Cast receiver (`com.google.android.apps.mediashell`), so the app name comes from the Cast entity.
   - `test_google_tv_cast_entity_supplies_playing` replays the Slaapkamer TV observations: Android TV Remote player `on` with a package name + Cast entity `playing` → counted; launcher + Cast `off` → not counted.
@@ -1536,6 +1537,25 @@ async def test_stale_cast_session_is_ignored(
     assert hass.states.get("sensor.slaapkamer_disney_watch_time") is None
 
 
+async def test_cast_session_for_ignored_app_is_ignored(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    hass.states.async_set(SLAAPKAMER_ATV, "on", {"app_name": "com.disney.disneyplus"})
+    hass.states.async_set(CAST, "playing", {"app_name": "Backdrop"})
+    await setup(
+        hass,
+        make_entry(
+            device_subentry(
+                CAST_SUBENTRY, "Slaapkamer", SLAAPKAMER_ATV, extra_entity=CAST
+            ),
+            options={CONF_NAME_OVERRIDES: "Backdrop = !ignore"},
+        ),
+    )
+    await clock.advance(120)
+    assert hass.states.get("sensor.slaapkamer_activity").state == "idle"
+    assert hass.states.get("sensor.slaapkamer_disney_watch_time") is None
+
+
 async def test_combined_sums_devices(hass: HomeAssistant, clock: FakeClock) -> None:
     set_lg(hass, "playing", "YouTube")
     hass.states.async_set(CAST, "playing", {"app_name": "YouTube"})
@@ -1779,6 +1799,7 @@ from .tracker import (
 )
 
 _UNKNOWN_APP = ResolvedApp(UNKNOWN_APP_KEY, UNKNOWN_APP_NAME)
+_IGNORED_EXTRA_APP = "!ignored"  # never equals a source key ([a-z0-9_])
 
 
 class TrackedDevice:
@@ -1890,13 +1911,19 @@ class TrackedDevice:
         )
         if self.raw_app is None:
             self.resolved_app = _UNKNOWN_APP
-        _, extra_app = (
+        extra_raw, extra_app = (
             detect_app({}, extra.attributes, self._overrides) if extra else (None, None)
         )
+        if extra_app is not None:
+            extra_key = extra_app.key
+        elif extra_raw is not None:
+            extra_key = _IGNORED_EXTRA_APP
+        else:
+            extra_key = None
         player_state = combined_player_state(
             player.state if player else None,
             extra.state if extra else None,
-            extra_app.key if extra_app else None,
+            extra_key,
             self.resolved_app.key if self.resolved_app else None,
         )
         app = counting_app(
@@ -2280,7 +2307,7 @@ The `{app}` placeholder comes from each sensor's `_attr_translation_placeholders
 - [ ] **Step 9: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `71 passed`, lint clean.
+Expected: `72 passed`, lint clean.
 
 - [ ] **Step 10: Commit**
 
@@ -2475,7 +2502,7 @@ async def _async_update_listener(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/ruff check --fix tests/test_sensor.py && .venv/bin/ruff format . && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `74 passed`, lint clean.
+Expected: `75 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3134,7 +3161,7 @@ Design notes:
 - [ ] **Step 5: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `81 passed`, lint clean.
+Expected: `82 passed`, lint clean.
 
 - [ ] **Step 6: Commit**
 
@@ -3235,7 +3262,7 @@ async def async_get_config_entry_diagnostics(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `82 passed`, lint clean.
+Expected: `83 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3447,7 +3474,7 @@ Deleting a tracked TV removes its device, sensors and per-TV totals. The combine
 - [ ] **Step 5: Full verification**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check . && python3 -c "import json; json.load(open('hacs.json')); json.load(open('custom_components/watch_time_tracker/manifest.json')); json.load(open('custom_components/watch_time_tracker/translations/en.json'))"`
-Expected: `82 passed`, lint clean, no JSON errors.
+Expected: `83 passed`, lint clean, no JSON errors.
 
 - [ ] **Step 6: Commit and check CI**
 
