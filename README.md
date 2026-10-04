@@ -60,7 +60,7 @@ PC = Gaming PC
 com.google.android.apps.tv.launcherx = !ignore
 ```
 
-`!ignore` means the value is never counted, which is useful for home screens and launchers. Matching is case-insensitive.
+`!ignore` means the value is never counted, which is useful for home screens and launchers, or for an input you never use. If an ignored source never counted any time, its sensors are removed when the integration reloads after you save the options. Matching is case-insensitive.
 
 Changing a mapping after time has been counted starts a new sensor. The old sensor keeps its total and stops growing. Re-pick the source on the **Counting mode per source** screen if it used the other mode.
 
