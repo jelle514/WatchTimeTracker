@@ -156,6 +156,16 @@ remote.slaapkamer_tv          | off | current_activity: com.disney.disneyplus   
 
 The main player being `off` wins: nothing is counted and the activity sensor shows `off`. The remote's stale `current_activity` is harmless.
 
+### Disney+ open after TV off/on (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on     | app_id/app_name: com.disney.disneyplus
+media_player.chromecast       | paused | app_id: B3E81094, app_name: F1TV Chromecast   (stale, survived TV off)
+remote.slaapkamer_tv          | on     | current_activity: com.disney.disneyplus
+```
+
+The stale F1 TV cast session came back after the TV was off. The Cast entity can report a session for a different app than the one on screen, so its `playing` should only be trusted when its app matches the detected app.
+
 ### Still to record
 
-- Disney+ after a fresh start (see "Disney+ playing").
+- Disney+ playing once the F1 TV cast session is really gone (stop casting on the phone first).
