@@ -3,6 +3,7 @@
 import pytest
 
 from custom_components.watch_time_tracker.app_names import (
+    BUILTIN_NAMES,
     OverrideError,
     ResolvedApp,
     detect_app,
@@ -127,3 +128,7 @@ def test_detect_app_all_ignored() -> None:
 
 def test_detect_app_nothing_to_detect() -> None:
     assert detect_app({}, None, {}) == (None, None)
+
+
+def test_builtin_names_are_casefolded() -> None:
+    assert all(key == key.casefold() for key in BUILTIN_NAMES)

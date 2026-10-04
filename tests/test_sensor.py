@@ -17,6 +17,7 @@ from .conftest import (
     CAST_REMOTE,
     CAST_SUBENTRY,
     LG,
+    LG_SOURCES,
     LG_SUBENTRY,
     FakeClock,
     device_subentry,
@@ -380,3 +381,24 @@ async def test_removing_subentry(hass: HomeAssistant, clock: FakeClock) -> None:
     )
     assert LG_SUBENTRY not in entry.runtime_data.store.device_ids()
     assert minutes(hass, ALL_YOUTUBE) == pytest.approx(1.0, abs=0.1)
+
+
+async def test_source_list_change_creates_new_sensor(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    set_lg(hass, "on")
+    await setup(hass, lg_entry())
+    assert hass.states.get("sensor.lg_live_tv_watch_time") is None
+
+    hass.states.async_set(
+        LG,
+        "playing",
+        {
+            "source_list": LG_SOURCES + ["Live TV"],
+            "source": "Live TV",
+            "friendly_name": "LG",
+        },
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.lg_live_tv_watch_time") is not None
+    assert hass.states.get("sensor.all_tvs_live_tv_watch_time") is not None
