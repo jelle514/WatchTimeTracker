@@ -177,7 +177,7 @@ Removing a sub-entry deletes its device and its entities (through the `config_su
 
 At every state change of the media player or the extra entity, the device works out its situation.
 
-First the **player state**: the media player's state, except that it becomes `playing` when the media player is on (not `off`, `unavailable`, `unknown`, `standby`, or missing) and the extra entity's state is `playing`. The media player alone decides on/off; either entity can say it is playing. This is needed for a Chromecast with Google TV, whose Android TV Remote player never says `playing` while its Cast entity does.
+First the **player state**: the media player's state, except that it becomes `playing` when the media player is on (not `off`, `unavailable`, `unknown`, `standby`, or missing) and the extra entity's state is `playing` **for the same app**: the extra entity's own app (detected from its attributes alone) is the detected app, or it names no app. The media player alone decides on/off; either entity can say it is playing. The same-app condition exists because a cast session left open on a phone kept the Cast entity on F1 TV while Disney+ was on screen (observed 2026-10-04). This is needed for a Chromecast with Google TV, whose Android TV Remote player never says `playing` while its Cast entity does.
 
 Then:
 
@@ -268,7 +268,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
     - per-source mode: an HDMI source counts while `on` and an app on the same TV counts only while `playing`
     - switching between sources with different modes
     - "Unknown app" counts only while playing, even with an `app_open` default
-    - player state: the extra entity's `playing` counts when the media player is on; the media player being off always wins
+    - player state: the extra entity's `playing` counts when the media player is on and the extra entity names no app or the same app; the media player being off always wins
     - a grace period of 0
     - live ticks don't double-count
     - negative time differences
@@ -283,7 +283,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
   - per-source step: options from `source_list` and stored sources, custom values, labels follow the default mode, selections stored as source keys
   - unidentified apps are credited to "Unknown app" while playing
   - the home screen (`on`, no source) is not counted with an `app_open` default
-  - Google TV setup (Android TV Remote player + Cast entity): playing YouTube is counted, the home screen is not, a cast app without a Google TV app is named by the Cast entity
+  - Google TV setup (Android TV Remote player + Cast entity): playing YouTube is counted, the home screen is not, a cast app without a Google TV app is named by the Cast entity, a stale cast session for another app is ignored
   - credits reach the device and combined sensors
   - totals survive a restart
   - removing a sub-entry removes its entities and stored data and keeps the combined totals
