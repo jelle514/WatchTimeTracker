@@ -72,6 +72,17 @@ remote.slaapkamer_tv          | on      | current_activity: com.google.android.y
 
 The Android TV Remote player (`slaapkamer_tv_2`) never says `playing`; it only knows on/off and the app. The Cast entity says `playing` with a friendly app name, but is `off` when no cast session is active (home screen). Neither entity alone gives both on/off and playing.
 
+### Netflix open, nothing playing (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on      | app_id/app_name: com.netflix.ninja, device_class: tv
+media_player.chromecast       | playing | app_id: Netflix, app_name: Netflix, media_content_type: video
+remote.slaapkamer_tv          | on      | current_activity: com.netflix.ninja
+```
+
+The Cast entity reports `playing` while Netflix is only open (browsing). For Netflix on this TV, Cast `playing` effectively means "app open", so browsing time will be counted. No entity reports anything better, so this is a device limit, not something the integration can fix.
+
 ### Still to record
 
-- YouTube, Netflix, Plex and Disney+, each while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
+- YouTube paused: does `media_player.chromecast` switch to `paused`?
+- Plex and Disney+, each while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
