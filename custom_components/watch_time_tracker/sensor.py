@@ -81,7 +81,7 @@ class _WatchTimeSensor(SensorEntity):
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_suggested_unit_of_measurement = UnitOfTime.HOURS
-    _attr_suggested_display_precision = 1
+    _attr_suggested_display_precision = 0
 
     def __init__(self, totals: Totals, key: str, info: DeviceInfo) -> None:
         self._totals = totals

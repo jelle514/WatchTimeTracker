@@ -56,6 +56,8 @@ async def test_sensors_created_from_source_list(
     youtube = ent_reg.async_get(LG_YOUTUBE)
     assert youtube is not None
     assert youtube.unique_id == f"{LG_SUBENTRY}_watch_youtube"
+    # Whole hours by default; users can raise the precision per sensor.
+    assert youtube.options["sensor"]["suggested_display_precision"] == 0
     assert youtube.config_subentry_id == LG_SUBENTRY
     assert ent_reg.async_get(ALL_YOUTUBE).unique_id == "combined_watch_youtube"
     assert ent_reg.async_get("sensor.lg_nintendo_switch_game_console_watch_time")
@@ -71,6 +73,31 @@ async def test_sensors_created_from_source_list(
     assert device is not None
     assert device.config_subentry_id == LG_SUBENTRY
     assert entry.state.name == "LOADED"
+
+
+async def test_existing_sensors_follow_new_precision(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    # Sensors created by v0.1.0/v0.1.1 stored a suggested precision of 1.
+    entry = lg_entry()
+    entry.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    registered = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{LG_SUBENTRY}_watch_youtube",
+        config_entry=entry,
+        config_subentry_id=LG_SUBENTRY,
+    )
+    ent_reg.async_update_entity_options(
+        registered.entity_id, "sensor", {"suggested_display_precision": 1}
+    )
+    set_lg(hass, "on")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    options = ent_reg.async_get(registered.entity_id).options["sensor"]
+    assert options["suggested_display_precision"] == 0
 
 
 async def test_playing_is_counted_with_live_ticks(

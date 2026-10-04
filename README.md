@@ -23,7 +23,7 @@ Copy `custom_components/watch_time_tracker` into your Home Assistant `config/cus
    - **Default counting mode** and **grace period**: see below.
 3. On the next screen, **Counting mode per source**, pick the sources on this TV that use the other counting mode.
 
-Each TV gets an **Activity** sensor and a **watch time** sensor per source. The **All TVs** device has the combined watch time sensors. Totals are stored in minutes and shown in hours with one decimal.
+Each TV gets an **Activity** sensor and a **watch time** sensor per source. The **All TVs** device has the combined watch time sensors. Totals are stored in minutes and shown in whole hours. For more detail, change a sensor's **Display precision** (or its unit) in its settings.
 
 ## Example setups
 

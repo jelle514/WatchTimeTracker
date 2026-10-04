@@ -27,7 +27,7 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 | Combined activity sensor | Not included |
 | What counts as watching | Per source: "playing only" or "while open". Each TV has a default mode and a manual list of sources that use the other mode |
 | Sensor type | Running totals, `total_increasing`. Period sensors may be spin-offs later |
-| Unit | Native unit is minutes, stored as a float and never rounded during accumulation. Displayed in hours with 1 decimal by default |
+| Unit | Native unit is minutes, stored as a float and never rounded during accumulation. Displayed in whole hours by default (changed from 1 decimal in v0.1.2: 6-minute steps looked odd); users can raise the precision per sensor |
 | App name normalisation | A built-in mapping that user overrides take priority over. Raw values can be marked as ignored |
 | Unidentified apps | Time while the app can't be identified goes to an "Unknown app" source instead of being lost, but only while the TV reports `playing`, whatever its default mode (a home screen looks the same as an unknown app) |
 | Persistence | `Store` is the only source of truth (no `RestoreSensor`) |
@@ -151,7 +151,7 @@ Changing an override after time has been counted changes the source key. The old
 ### Watch time sensor properties
 
 - `device_class: duration`, `state_class: total_increasing`, native unit `min`, float value.
-- `suggested_unit_of_measurement: h` and `suggested_display_precision: 1`, so totals display as e.g. `3.3 h`.
+- `suggested_unit_of_measurement: h` and `suggested_display_precision: 0`, so totals display as whole hours. Home Assistant re-applies the suggested precision to existing sensors unless the user set their own.
 - **Created dynamically:**
   - From `source_list` when a device is set up and whenever `source_list` changes.
   - On the first counted session for a source key with no sensor yet.
