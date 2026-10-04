@@ -1,6 +1,6 @@
 # Watch Time Tracker — Design
 
-**Date:** 2026-10-03
+**Date:** 2026-10-03 (revised 2026-10-04 after review)
 **Status:** Approved design, pending implementation plan
 **Supersedes:** `lg-webos-source-tracker-brief.md` (single LG TV scope)
 
@@ -14,7 +14,8 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 - **Woonkamer TV** (LG webOS): `media_player.lg_webos_smart_tv`. Reports `source` and `source_list` (Disney+, HDMI 4, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube). Two stale duplicates exist (`media_player.lg_webos_tv_oled55c34la`, `..._2`) that should not be used.
 - **Slaapkamer TV** (Chromecast with Google TV): `media_player.chromecast` (Google Cast), `media_player.slaapkamer_tv_2` (Android TV Remote, `assumed_state`), `remote.slaapkamer_tv` (Android TV Remote, `current_activity`). It has no `source_list`.
 - The existing `sensor.tv_active_source` template helper references `media_player.lg_webos_tv`, which does not exist. It therefore always reports `idle`. The integration replaces it.
-- Known LG behaviour: YouTube flips between `playing` and `paused` every 20–60 seconds during playback, which undercounts without a grace period.
+- Playback has short gaps that would undercount without a grace period: the moment between back-to-back videos (e.g. several short YouTube videos in a row), brief pauses, and short network drops. An earlier observation of YouTube "flipping" between `playing` and `paused` turned out to be this, not an app bug.
+- HDMI inputs (PC, Nintendo Switch, HDMI 4) have no media session. The LG most likely reports `on`, not `playing`, while they are in use, so `playing_only` mode would never count them (to be confirmed, see "Before implementation"). Apps that do report `playing` should still be counted only while playing, which is why the counting mode can be set per source.
 
 ## Decisions
 
@@ -23,10 +24,13 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 | Configuration structure | One main config entry, with one config sub-entry per tracked TV |
 | Combined totals | Sum of the per-device time (YouTube for 1 h on two TVs = 2 h combined) |
 | Combined activity sensor | Not included |
-| What counts as watching | Configurable per device: "playing only" or "any on-state with app open" |
+| What counts as watching | Per source: "playing only" or "while open". Each TV has a default mode and a manual list of sources that use the other mode |
 | Sensor type | Running totals, `total_increasing`. Period sensors may be spin-offs later |
-| Unit | Native unit is minutes, stored as a float and never rounded during accumulation. Suggested display unit is hours |
-| App name normalisation | A built-in mapping that user overrides take priority over |
+| Unit | Native unit is minutes, stored as a float and never rounded during accumulation. Displayed in hours with 1 decimal by default |
+| App name normalisation | A built-in mapping that user overrides take priority over. Raw values can be marked as ignored |
+| Unidentified apps | Time counted while the app can't be identified goes to an "Unknown app" source instead of being lost |
+| Persistence | `Store` is the only source of truth (no `RestoreSensor`) |
+| Durations | Measured with a monotonic clock, not wall-clock time |
 | Distribution | HACS custom repository and manual copy |
 
 ## Packaging and distribution
@@ -41,42 +45,69 @@ custom_components/watch_time_tracker/
   config_flow.py
   const.py
   device.py
+  diagnostics.py
   hub.py
   sensor.py
   storage.py
-  strings.json
+  tracker.py
   translations/en.json
+  brand/
+    icon.png
+    logo.png
 .github/workflows/validate.yml
 tests/
 ```
 
 - **Domain:** `watch_time_tracker`. **Name:** Watch Time Tracker.
-- **`hacs.json`:** `name` and `homeassistant: "2026.9.0"` (the version tested against; lowered only after testing on older releases). `render_readme: true`.
+- **`hacs.json`:** `name` and `homeassistant: "2026.9.0"` (the version tested against; lowered only after testing on older releases). No `render_readme`: HACS 2.x always shows the README.
 - **`manifest.json`:** `domain`, `name`, `version`, `config_flow: true`, `single_config_entry: true`, `integration_type: "hub"`, `iot_class: "calculated"`, `documentation`, `issue_tracker`, `codeowners`, `requirements: []`, and `dependencies` as needed.
+- **Translations:** only `translations/en.json`. No `strings.json` (that is a core-repo convention).
+- **Brand images:** shipped in `brand/` inside the integration (supported since HA 2026.3). The HACS validation action may still need `ignore: brands`.
 - **Releases:** every version is a GitHub release whose tag matches `manifest.json`'s `version`, so HACS offers updates.
 - **CI:** a GitHub Actions workflow running the HACS validation action, `hassfest` and pytest on push and pull request.
-- **README:** covers installation (HACS custom repository and manual copy), setup steps, an explanation of the counting modes and grace period, and the name mapping format.
+- **README:** covers installation (HACS custom repository and manual copy), setup steps, an explanation of the counting modes (including the per-source list and which sources typically need it, such as HDMI inputs) and grace period, the name mapping format (including ignored values), and the fact that changing a name override starts a new sensor (see "Name mapping changes").
 
 ## Configuration
 
 ### Main entry
 
 - Single instance. The setup flow has no fields and only creates the entry.
-- **Options flow:** a multi-line text field for app name overrides, one `raw value = Display Name` per line. Invalid lines are rejected with an error that names the line.
+- **Options flow:** a multi-line text field for app name overrides, one line per value:
+  - `raw value = Display Name` maps a raw value to a display name.
+  - `raw value = !ignore` marks a raw value as ignored (e.g. a home screen launcher).
+  - Invalid lines are rejected with an error that names the line.
 - Owns the combined device and its sensors.
 
 ### Sub-entry: tracked device ("Add tracked device")
 
 | Field | Required | Default | Notes |
 |---|---|---|---|
-| Name | yes | media player's friendly name | Device name |
+| Name | yes | media player's friendly name | Device name and sub-entry title |
 | Media player | yes | — | Entity selector, `media_player` domain. Its state decides playing, on or off |
 | Extra activity entity | no | — | Entity selector (`remote`, `media_player`). Used when the media player doesn't identify the app |
-| Counting mode | yes | Playing only | `playing_only` or `app_open` |
+| Default counting mode | yes | Playing only | `playing_only` or `app_open` |
 | Grace period | yes | 60 s | 0–600 s |
 
-- The same media player cannot be tracked by two sub-entries; the flow aborts with an error.
+The flow has a second step, **"Counting mode per source"**:
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| Sources that use the other mode | no | empty | Multi-select. The label follows the default mode: "Sources that count whenever they're open" (default `playing_only`) or "Sources that count only while playing" (default `app_open`) |
+
+- The options are the display names from the media player's current `source_list` plus the sources already known for this device (stored totals). Custom values can be typed, for apps that haven't been seen yet.
+- Selections are stored as source keys (resolved through the name mapping), so they match whatever raw value the TV reports.
+- The default mode and the list belong to this TV only, because TVs report states differently. The same source can use a different mode on another TV (e.g. Plex counts only while playing on the LG, but whenever it's open on the Chromecast).
+- "Unknown app" always uses the default mode.
+- The reconfigure flow has the same two steps.
+
+- The same media player cannot be tracked by two sub-entries; the flow aborts with an error. This is checked in both the create and the reconfigure flow.
 - A reconfigure flow can change every field. Changing the media player keeps the device's totals.
+
+### Lifecycle of changes
+
+- The main entry has an update listener that reloads the entry whenever sub-entries are added, changed or removed, or the options change.
+- Unloading closes all open sessions (as on shutdown) and saves immediately.
+- On setup, stored per-device data whose sub-entry ID no longer exists is deleted. Combined totals are kept.
 
 ### App detection
 
@@ -88,9 +119,15 @@ The raw app value is the first non-empty value of:
 4. the extra entity's `source` attribute
 5. the extra entity's `app_name` attribute
 
-The raw value is resolved through the name mapping. User overrides are checked first, then the built-in table, then the raw value is used unchanged. The resolved display name gives the **source key** (`slugify(display_name)`, e.g. `youtube`). Matching keys share a combined sensor.
+The raw value is resolved through the name mapping. User overrides are checked first, then the built-in table, then the raw value is used unchanged. A value that resolves to ignored is treated as "no app": the device is then NotCounting, whatever the counting mode.
 
-The built-in table starts with common Google TV / Android TV package names (YouTube, Netflix, Disney+, Plex, NPO Start, Prime Video, Spotify). It is updated with the values recorded during the Chromecast check (see "Before implementation").
+The resolved display name gives the **source key**: `slugify(display_name)`, e.g. `youtube`. If the slug is empty (e.g. emoji-only or some non-Latin names), the key is `app_` plus the first 8 hex characters of the SHA-1 of the display name. Display names that give the same slug (e.g. `Disney+` and `Disney`) share one sensor; this is intended. Matching keys share a combined sensor.
+
+The built-in table starts with common Google TV / Android TV package names (YouTube, Netflix, Disney+, Plex, NPO Start, Prime Video, Spotify) and marks known launchers (e.g. the Google TV home screen) as ignored. It is updated with the values recorded during the Chromecast check (see "Before implementation").
+
+### Name mapping changes
+
+Changing an override after time has been counted changes the source key. The old sensor keeps its total and stops growing, and a new sensor starts at 0. A per-source counting mode selection for the old key no longer applies and has to be set again for the new one. Merging totals is out of scope.
 
 ## Devices and entities
 
@@ -98,24 +135,32 @@ The built-in table starts with common Google TV / Android TV package names (YouT
 
 | Entity | Unique ID | State |
 |---|---|---|
-| Activity | `{subentry_id}_activity` | The display name while counting (including during the grace period), `idle` when on but not counting, `off` when off/unavailable, `unknown` when on/playing but the app can't be identified |
-| Watch time for each source | `{subentry_id}_{source_key}` | Running total in minutes |
+| Activity | `{subentry_id}_activity` | The display name while counting (including during the grace period; "Unknown app" when the app can't be identified), `idle` when on but not counting, `off` when off/unavailable. It never uses a literal `"unknown"` string, which would clash with HA's own `unknown` state |
+| Watch time for each source | `{subentry_id}_watch_{source_key}` | Running total in minutes |
+
+- The device is registered with `config_subentry_id`, and its entities are added with `async_add_entities(..., config_subentry_id=subentry_id)`. This puts them under the right sub-entry in the UI and lets HA remove them when the sub-entry is removed.
 
 ### Combined (device owned by the main entry)
 
 | Entity | Unique ID | State |
 |---|---|---|
-| Watch time for each source | `combined_{source_key}` | Running total in minutes |
+| Watch time for each source | `combined_watch_{source_key}` | Running total in minutes |
 
 ### Watch time sensor properties
 
-- `device_class: duration`, `state_class: total_increasing`, native unit `min`, suggested unit `h`, float value.
+- `device_class: duration`, `state_class: total_increasing`, native unit `min`, float value.
+- `suggested_unit_of_measurement: h` and `suggested_display_precision: 1`, so totals display as e.g. `3.3 h`.
 - **Created dynamically:**
   - From `source_list` when a device is set up and whenever `source_list` changes.
   - On the first counted session for a source key with no sensor yet.
   - From the saved list of known sources at startup, so sensors exist even while the TV is off.
 - A combined sensor is created when any device creates its first sensor for that source key.
-- Entity names use the display name, e.g. "YouTube watch time" on the device "Slaapkamer TV".
+
+### Entity conventions
+
+- `_attr_has_entity_name = True`, `_attr_should_poll = False`.
+- Names come from `translation_key` with placeholders, e.g. `"{app} watch time"`, giving "YouTube watch time" on the device "Slaapkamer TV".
+- The "Unknown app" source uses the source key `unknown_app`.
 
 ### Combined totals
 
@@ -123,7 +168,7 @@ The combined sensors keep **their own count** and do not compute a live sum. Eve
 
 ### Removing a tracked TV
 
-Removing a sub-entry deletes its device, its entities and its saved per-device totals. Combined totals keep the time it contributed.
+Removing a sub-entry deletes its device and its entities (through the `config_subentry_id` link) and its saved per-device totals (on the reload that follows, see "Lifecycle of changes"). Combined totals keep the time it contributed.
 
 ## How time is counted
 
@@ -131,9 +176,11 @@ Removing a sub-entry deletes its device, its entities and its saved per-device t
 
 At every state change of the media player or the extra entity, the device works out its situation:
 
-- **Counting(app)** when an app is known and:
-  - mode `playing_only`: the media player's state is `playing`
-  - mode `app_open`: the media player's state is not one of `off`, `unavailable`, `unknown`, `standby`
+- **Counting(app)** when the app is not ignored and the device is active for that app's counting mode:
+  - `playing_only`: the media player's state is `playing`
+  - `app_open`: the media player's state is not one of `off`, `unavailable`, `unknown`, `standby`
+
+  The app is detected first, then its mode is looked up: the opposite of the default if the app's source key is in the per-source list, otherwise the default. If no app can be identified, `app` is "Unknown app" and the default mode applies.
 - **NotCounting** otherwise.
 
 ### State machine (`tracker.py`)
@@ -143,28 +190,39 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
 | From | Event | To | Effect |
 |---|---|---|---|
 | Idle | Counting(app) | Counting(app, now) | — |
+| Idle | NotCounting | Idle | — |
+| Counting(app) | Counting(app) | Counting(app, since) | — (e.g. an attribute changed, same app) |
 | Counting(app) | NotCounting | Grace(app, since, now) | Start grace timer |
 | Counting(app) | Counting(other) | Counting(other, now) | Credit `app` with `now − since` |
+| Grace(app) | NotCounting | Grace(app, since, gap_start) | — (e.g. `paused` → `off`; the timer keeps running) |
 | Grace(app) | Counting(app) | Counting(app, since) | Cancel timer; the gap counts as watching |
 | Grace(app) | Counting(other) | Counting(other, now) | Credit `app` with `gap_start − since`; the gap is not counted |
 | Grace(app) | Grace timer expires | Idle | Credit `app` with `gap_start − since` |
 | Counting(app) | Live update tick | Counting(app, now) | Credit `app` with `now − since` |
-| any | Shutdown | Idle | Close any open session as above (Grace credits up to `gap_start`) |
+| any | Shutdown / unload | Idle | Close any open session as above (Grace credits up to `gap_start`) |
 
 - A grace period of 0 s closes the session straight away.
 - The **live update tick** runs every 60 s while in `Counting`. Time already credited by a tick is not credited again: `since` moves forward to the tick time. While in `Grace`, ticks credit nothing.
-- If a time difference is negative (clock jump), nothing is credited.
+- Times are monotonic (`time.monotonic()`), so wall-clock changes don't affect durations. A negative difference is still guarded against and credits nothing.
 - `tracker.py` is a plain Python class with no Home Assistant imports. Time is passed in as an argument. It returns a list of `(source_key, minutes)` credits.
+
+### Timers and listeners
+
+- Entity changes: `async_track_state_change_event` on the media player and the extra entity.
+- Grace timer: `async_call_later`.
+- Live tick: `async_track_time_interval`, started on entering `Counting` and stopped on leaving it.
+- Every listener and timer is cancelled through `entry.async_on_unload`.
+- The hub and devices are kept in `entry.runtime_data`, not `hass.data`.
 
 ### Persistence
 
-- `storage.py` wraps `homeassistant.helpers.storage.Store` (versioned). It saves:
+- `storage.py` wraps `homeassistant.helpers.storage.Store` with `version`, `minor_version` and a migration function. It saves:
   - per sub-entry: `{source_key: {display_name, minutes}}`
   - combined: `{source_key: {display_name, minutes}}`
+- `Store` is the only source of truth. Sensors do not use `RestoreSensor`.
 - Every credit triggers a delayed save (`async_delay_save`, ~30 s).
-- The sensors also implement `RestoreSensor`. If storage is missing or corrupt, the last restored state is used as the starting total.
-- **Shutdown** (`EVENT_HOMEASSISTANT_STOP` / entry unload): close open sessions and save immediately.
-- **Startup:** totals come from storage, and the situation is read from the current entity states. Downtime is never credited.
+- **Shutdown** (`EVENT_HOMEASSISTANT_STOP`) and **unload**: close open sessions and save immediately.
+- **Startup:** totals are loaded from storage before any tracking starts, and the situation is read from the current entity states. Downtime is never credited.
 
 ### Edge cases
 
@@ -172,56 +230,77 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
 - A tracked entity that doesn't exist (yet) gives NotCounting. Setup does not fail.
 - A source key that isn't in `source_list` is still tracked.
 
+## Diagnostics
+
+`diagnostics.py` implements config entry diagnostics with, per device: the current state machine state, the raw detected app value and how it was resolved, the default counting mode, the per-source list, the effective mode of the current app, the grace period, and the stored totals. Combined totals are included too.
+
 ## Code structure
 
 | File | Job | Depends on |
 |---|---|---|
 | `const.py` | Domain, config keys, defaults | — |
-| `app_names.py` | Built-in table, override parsing, `resolve(raw, overrides) -> (key, display_name)` | — |
+| `app_names.py` | Built-in table, override parsing, `resolve(raw, overrides) -> (key, display_name) \| IGNORED` | — |
 | `tracker.py` | The state machine above | — |
-| `storage.py` | Load and save totals | HA `Store` |
+| `storage.py` | Load, save and migrate totals | HA `Store` |
 | `hub.py` | Combined totals; receives credits from devices; announces new combined sources | `storage.py` |
 | `device.py` | One per sub-entry: subscribes to entity state changes, works out the situation, runs the grace timer and live tick, feeds `tracker.py`, passes credits to its sensors and the hub, announces new sources | `tracker.py`, `app_names.py`, `hub.py`, `storage.py` |
 | `sensor.py` | Activity, per-device and combined watch time entities; adds entities on new-source signals (dispatcher) | `device.py`, `hub.py` |
-| `config_flow.py` | Main flow, options flow, sub-entry flow and reconfigure | — |
-| `__init__.py` | Entry setup and unload, sub-entry lifecycle | all |
+| `diagnostics.py` | Config entry diagnostics | `hub.py`, `device.py` |
+| `config_flow.py` | Main flow, options flow, sub-entry flow and reconfigure | `app_names.py` |
+| `__init__.py` | Entry setup and unload, update listener, sub-entry lifecycle, stale data cleanup | all |
 
 ## Testing
 
 - **Unit tests (no HA):**
-  - `app_names`: built-in lookups, override priority, override parsing errors, unknown values, slug keys.
+  - `app_names`: built-in lookups, override priority, override parsing errors, `!ignore`, unknown values, slug keys, empty-slug hash fallback.
   - `tracker` with a fake clock:
-    - flapping shorter than the grace period is fully counted
+    - short gaps (between videos, brief pauses) shorter than the grace period are fully counted
     - a gap longer than the grace period is not counted
     - switching apps during the grace period
+    - `off` during the grace period
+    - same-app updates are no-ops
     - both counting modes
+    - per-source mode: an HDMI source counts while `on` and an app on the same TV counts only while `playing`
+    - switching between sources with different modes
     - a grace period of 0
     - live ticks don't double-count
     - negative time differences
     - shutdown during `Counting` and during `Grace`
-- **Integration tests** (`pytest-homeassistant-custom-component`):
+- **Integration tests** (`pytest-homeassistant-custom-component`, pinned to the version matching HA 2026.9):
   - main flow, single-instance abort, options validation
-  - sub-entry create, duplicate media player abort, reconfigure
+  - sub-entry create, duplicate media player abort (create and reconfigure), reconfigure
+  - entities and device linked to the sub-entry
   - sensors created from `source_list` and on first sight
-  - activity sensor states
+  - activity sensor states, including "Unknown app"
+  - ignored apps are not counted in either mode
+  - per-source step: options from `source_list` and stored sources, custom values, labels follow the default mode, selections stored as source keys
+  - unidentified apps are credited to "Unknown app"
   - credits reach the device and combined sensors
-  - totals survive a restart (storage and restore fallback)
-  - removing a sub-entry keeps the combined totals
+  - totals survive a restart
+  - removing a sub-entry removes its entities and stored data and keeps the combined totals
+  - diagnostics output
 - **CI:** HACS validation, hassfest, pytest.
 
 ## Before implementation
 
-Turn on the Slaapkamer TV and open the commonly used apps (at least YouTube, Netflix, Plex, Disney+). For each app, record from the HA REST API:
+Turn on the Slaapkamer TV and open the commonly used apps (at least YouTube, Netflix, Plex, Disney+), plus the home screen. For each, record from the HA REST API:
 
 - `media_player.chromecast`: state, `app_name`, `app_id`, other media attributes
 - `remote.slaapkamer_tv`: state, `current_activity`
 - `media_player.slaapkamer_tv_2`: state
 
-Do the same for the LG during YouTube playback to confirm the flapping. Use the results to:
+Do the same for the LG:
+
+- while watching several short YouTube videos back to back. Record which state it reports between videos (`paused`, `idle`, or something else) and how long that gap lasts.
+- while using an HDMI source (PC or Nintendo Switch). Record the state and `source`.
+
+Use the results to:
 
 - confirm or adjust the app detection order
-- fill the built-in name table with the real values
-- confirm that the Cast entity reports `playing` for native apps. If it doesn't, the Slaapkamer TV needs `app_open` mode, and the README should say so.
+- fill the built-in name table with the real values, including the launcher values to ignore
+- confirm that the Cast entity reports `playing` for native apps. Any app that doesn't goes into the per-source list (or the Slaapkamer TV gets `app_open` as its default if most apps don't), and the README should say so.
+- confirm the 60 s grace period default against the measured gaps between videos
+- confirm whether HDMI sources report `playing`. If they don't, they go into the LG's per-source list, and the README should say so.
 
 ## Out of scope
 
@@ -229,3 +308,5 @@ Do the same for the LG during YouTube playback to confirm the flapping. Use the 
 - Combined activity sensor
 - Overlap-aware combined totals
 - Crediting time while HA was down
+- Merging totals after a name mapping change
+- Learning the counting mode per source automatically
