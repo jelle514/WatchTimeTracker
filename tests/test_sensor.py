@@ -186,11 +186,9 @@ async def test_casting_to_lg_uses_builtin_chromecast(
         LG_CAST, "playing", {"app_id": "B3E81094", "app_name": "F1TV Chromecast"}
     )
     await setup(hass, lg_entry(extra_entity=LG_CAST))
-    assert hass.states.get(LG_ACTIVITY).state == "F1TV Chromecast"
+    assert hass.states.get(LG_ACTIVITY).state == "F1 TV"
     await clock.advance(60)
-    assert minutes(hass, "sensor.lg_f1tv_chromecast_watch_time") == pytest.approx(
-        1.0, abs=0.1
-    )
+    assert minutes(hass, "sensor.lg_f1_tv_watch_time") == pytest.approx(1.0, abs=0.1)
 
 
 async def test_google_tv_cast_entity_supplies_playing(
@@ -244,11 +242,11 @@ async def test_casting_app_without_google_tv_app(
             )
         ),
     )
-    assert hass.states.get("sensor.slaapkamer_activity").state == "F1TV Chromecast"
+    assert hass.states.get("sensor.slaapkamer_activity").state == "F1 TV"
     await clock.advance(60)
-    assert minutes(
-        hass, "sensor.slaapkamer_f1tv_chromecast_watch_time"
-    ) == pytest.approx(1.0, abs=0.1)
+    assert minutes(hass, "sensor.slaapkamer_f1_tv_watch_time") == pytest.approx(
+        1.0, abs=0.1
+    )
 
 
 async def test_stale_cast_session_is_ignored(

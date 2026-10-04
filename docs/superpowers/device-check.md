@@ -12,7 +12,7 @@ media_player.lg_webos_tv_oled55c34la_2  | playing     | app_id: B3E81094, app_na
 media_player.lg_webos_tv_oled55c34la    | unavailable |
 ```
 
-The LG reports `playing` with **no `source`**. The built-in Chromecast (`..._2`) names the app. Use `..._2` as the LG's extra activity entity. Possible built-in name: `f1tv chromecast` → `F1 TV`.
+The LG reports `playing` with **no `source`**. The built-in Chromecast (`..._2`) names the app. Use `..._2` as the LG's extra activity entity. Built-in name: `f1tv chromecast` → `F1 TV` (owner's choice, applied in Task 9).
 
 ### PC on HDMI (2026-10-04)
 

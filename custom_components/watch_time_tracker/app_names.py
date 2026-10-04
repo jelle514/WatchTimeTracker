@@ -19,6 +19,7 @@ BUILTIN_NAMES: dict[str, str | None] = {
     "nl.uitzendinggemist": "NPO Start",
     "com.amazon.amazonvideo.livingroom": "Prime Video",
     "com.spotify.tv.android": "Spotify",
+    "f1tv chromecast": "F1 TV",
     # Home screens / launchers
     "com.google.android.apps.tv.launcherx": None,
     "com.google.android.tvlauncher": None,

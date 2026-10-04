@@ -17,6 +17,10 @@ def test_builtin_lookup() -> None:
     assert resolve("com.netflix.ninja", {}) == ResolvedApp("netflix", "Netflix")
 
 
+def test_builtin_lookup_f1_tv() -> None:
+    assert resolve("F1TV Chromecast", {}) == ResolvedApp("f1_tv", "F1 TV")
+
+
 def test_builtin_lookup_ignores_case() -> None:
     assert resolve("COM.NETFLIX.NINJA", {}) == ResolvedApp("netflix", "Netflix")
 
@@ -109,7 +113,7 @@ def test_detect_app_skips_ignored_values() -> None:
     extra = {"app_name": "F1TV Chromecast"}
     assert detect_app(media, extra, {}) == (
         "F1TV Chromecast",
-        ResolvedApp("f1tv_chromecast", "F1TV Chromecast"),
+        ResolvedApp("f1_tv", "F1 TV"),
     )
 
 
