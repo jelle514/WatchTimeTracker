@@ -11,10 +11,11 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 ## Context
 
 - Home Assistant 2026.9.4, time zone Europe/Amsterdam.
-- **Woonkamer TV** (LG webOS): `media_player.lg_webos_smart_tv`. Reports `source` and `source_list` (Disney+, HDMI 4, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube). Two stale duplicates exist (`media_player.lg_webos_tv_oled55c34la`, `..._2`) that should not be used.
+- **Woonkamer TV** (LG webOS): `media_player.lg_webos_smart_tv`. Reports `source` and `source_list` (Disney+, HDMI 4, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube). `media_player.lg_webos_tv_oled55c34la` is a stale duplicate (unavailable) and should not be used. `media_player.lg_webos_tv_oled55c34la_2` is the LG's **built-in Chromecast** (Google Cast) and is the LG's extra activity entity.
 - **Slaapkamer TV** (Chromecast with Google TV): `media_player.chromecast` (Google Cast), `media_player.slaapkamer_tv_2` (Android TV Remote, `assumed_state`), `remote.slaapkamer_tv` (Android TV Remote, `current_activity`). It has no `source_list`.
 - The existing `sensor.tv_active_source` template helper references `media_player.lg_webos_tv`, which does not exist. It therefore always reports `idle`. The integration replaces it.
 - Playback has short gaps that would undercount without a grace period: the moment between back-to-back videos (e.g. several short YouTube videos in a row), brief pauses, and short network drops. An earlier observation of YouTube "flipping" between `playing` and `paused` turned out to be this, not an app bug.
+- Observed 2026-10-04 while casting F1 TV to the LG: the LG entity reports `playing` with `source_list` but **no `source` attribute**. The built-in Chromecast entity reports `playing` with `app_name: F1TV Chromecast` and `app_id: B3E81094`. App detection therefore falls back to the extra entity's `app_name`; without the extra entity, casting would count as "Unknown app".
 - HDMI inputs (PC, Nintendo Switch, HDMI 4) have no media session. The LG most likely reports `on`, not `playing`, while they are in use, so `playing_only` mode would never count them (to be confirmed, see "Before implementation"). Apps that do report `playing` should still be counted only while playing, which is why the counting mode can be set per source.
 
 ## Decisions
@@ -289,14 +290,17 @@ Turn on the Slaapkamer TV and open the commonly used apps (at least YouTube, Net
 - `remote.slaapkamer_tv`: state, `current_activity`
 - `media_player.slaapkamer_tv_2`: state
 
-Do the same for the LG:
+Do the same for the LG, including `media_player.lg_webos_tv_oled55c34la_2` (built-in Chromecast):
+
+- while casting from a phone (done 2026-10-04, see Context).
+- while a native app plays (does the LG then report `source`, and does the Cast entity go `off`/`idle`?).
 
 - while watching several short YouTube videos back to back. Record which state it reports between videos (`paused`, `idle`, or something else) and how long that gap lasts.
 - while using an HDMI source (PC or Nintendo Switch). Record the state and `source`.
 
 Use the results to:
 
-- confirm or adjust the app detection order
+- confirm or adjust the app detection order (casting already confirms the fallback to the extra entity's `app_name`)
 - fill the built-in name table with the real values, including the launcher values to ignore
 - confirm that the Cast entity reports `playing` for native apps. Any app that doesn't goes into the per-source list (or the Slaapkamer TV gets `app_open` as its default if most apps don't), and the README should say so.
 - confirm the 60 s grace period default against the measured gaps between videos

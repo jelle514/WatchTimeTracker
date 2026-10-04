@@ -67,9 +67,59 @@ tests/
   test_sensor.py     test_config_flow.py  test_diagnostics.py  (HA integration tests)
 ```
 
-## Prerequisite (owner, not blocking)
+## Ordering
 
-The spec's "Before implementation" device check (recording the Chromecast and LG states and attributes) needs the real TVs, so it's Task 9 and done by the owner. Tasks 1–8 don't depend on it: the built-in name table starts with known Android TV package names, and Task 9 corrects it.
+Task 0 (the owner's real-TV check) comes first, as agreed in the design. Tasks 1–8 don't depend on its results: the plan's code is fixed and verified. Task 9 applies the findings (built-in name table, README advice, grace default) once the code exists.
+
+---
+
+### Task 0: Real-TV check (owner, first)
+
+This needs the physical TVs, so the owner does it. It corresponds to the spec's "Before implementation" section. Its results go into a notes file that Task 9 applies.
+
+**Already observed (2026-10-04, casting F1 TV to the LG):**
+
+```
+media_player.lg_webos_smart_tv | playing | device_class: tv, source_list: [Disney+, HDMI 4, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube]   (no source)
+media_player.lg_webos_tv_oled55c34la_2 | playing | app_id: B3E81094, app_name: F1TV Chromecast, media_content_type: video
+media_player.lg_webos_tv_oled55c34la | unavailable
+```
+
+`..._2` is the LG's built-in Chromecast and becomes the Woonkamer TV's extra activity entity. The test `test_casting_to_lg_uses_builtin_chromecast` (Task 4) replays this observation.
+
+**Files:**
+- Create: `docs/superpowers/device-check.md`
+
+- [ ] **Step 1: Record the states and attributes in each situation**
+
+In Home Assistant, go to **Developer Tools → Template**, paste the following, and copy the output for each situation:
+
+```jinja
+{% for s in states.media_player | list + states.remote | list %}
+{{ s.entity_id }} | {{ s.state }} | {{ s.attributes | dictsort | selectattr(0, 'in', ['source','source_list','app_name','app_id','current_activity','media_content_type','media_title','device_class']) | list }}
+{% endfor %}
+```
+
+Situations:
+- **Woonkamer TV (LG):**
+  - a native app playing (YouTube, Netflix)
+  - several short YouTube videos back to back. Run the template between two videos and note roughly how long the gap lasts.
+  - an HDMI source (PC or Nintendo Switch)
+  - the home screen
+- **Slaapkamer TV (Chromecast with Google TV):**
+  - the home screen
+  - YouTube, Netflix, Plex and Disney+, each while playing and while paused
+
+- [ ] **Step 2: Write the notes**
+
+`docs/superpowers/device-check.md` gets one section per situation, with the pasted output and one line saying what it means: which raw value names the app, which state the TV reports, and the gap length between videos.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/superpowers/device-check.md
+git commit -m "docs: record real-TV states for app detection"
+```
 
 ---
 
@@ -1090,6 +1140,7 @@ git commit -m "feat: add counting decision and session state machine"
     - `diagnostics() -> dict`
   - `__init__.py`: `RuntimeData(store, hub, devices: dict[str, TrackedDevice])`, `type WatchTimeConfigEntry = ConfigEntry[RuntimeData]`, `PLATFORMS`.
   - Entity IDs used by tests (device "LG", combined device "All TVs"): `sensor.lg_activity`, `sensor.lg_youtube_watch_time`, `sensor.all_tvs_youtube_watch_time`.
+  - `test_casting_to_lg_uses_builtin_chromecast` replays the Task 0 observation: LG `playing` with no `source`, plus `media_player.lg_webos_tv_oled55c34la_2` reporting `app_name: F1TV Chromecast`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1123,6 +1174,7 @@ from .conftest import (
 LG_YOUTUBE = "sensor.lg_youtube_watch_time"
 LG_PC = "sensor.lg_pc_watch_time"
 LG_ACTIVITY = "sensor.lg_activity"
+LG_CAST = "media_player.lg_webos_tv_oled55c34la_2"  # built-in Chromecast
 ALL_YOUTUBE = "sensor.all_tvs_youtube_watch_time"
 
 
@@ -1254,6 +1306,23 @@ async def test_extra_entity_and_override(hass: HomeAssistant, clock: FakeClock) 
     await setup(hass, entry)
     await clock.advance(60)
     assert minutes(hass, "sensor.slaapkamer_netflix_nl_watch_time") == pytest.approx(
+        1.0, abs=0.1
+    )
+
+
+async def test_casting_to_lg_uses_builtin_chromecast(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    # Observed: while casting, the LG reports playing without a source,
+    # and its built-in Chromecast reports the app.
+    set_lg(hass, "playing")
+    hass.states.async_set(
+        LG_CAST, "playing", {"app_id": "B3E81094", "app_name": "F1TV Chromecast"}
+    )
+    await setup(hass, lg_entry(extra_entity=LG_CAST))
+    assert hass.states.get(LG_ACTIVITY).state == "F1TV Chromecast"
+    await clock.advance(60)
+    assert minutes(hass, "sensor.lg_f1tv_chromecast_watch_time") == pytest.approx(
         1.0, abs=0.1
     )
 
@@ -1987,7 +2056,7 @@ The `{app}` placeholder comes from each sensor's `_attr_translation_placeholders
 - [ ] **Step 9: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `59 passed`, lint clean.
+Expected: `60 passed`, lint clean.
 
 - [ ] **Step 10: Commit**
 
@@ -2182,7 +2251,7 @@ async def _async_update_listener(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/ruff check --fix tests/test_sensor.py && .venv/bin/ruff format . && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `62 passed`, lint clean.
+Expected: `63 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -2841,7 +2910,7 @@ Design notes:
 - [ ] **Step 5: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `69 passed`, lint clean.
+Expected: `70 passed`, lint clean.
 
 - [ ] **Step 6: Commit**
 
@@ -2942,7 +3011,7 @@ async def async_get_config_entry_diagnostics(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `70 passed`, lint clean.
+Expected: `71 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3102,6 +3171,7 @@ Copy `custom_components/watch_time_tracker` into your Home Assistant `config/cus
 2. On the Watch Time Tracker entry, choose **Add tracked TV** for each TV:
    - **Media player**: the TV's media player entity. Its state decides playing, on or off.
    - **Extra activity entity** (optional): a remote or media player that reports the current app when the media player doesn't, for example `remote.<name>` from the Android TV Remote integration for a Chromecast with Google TV.
+     For a TV with Chromecast built in (such as many LG webOS TVs), use the TV's Google Cast media player: while you cast, the TV itself reports `playing` without naming the app, and the Cast entity's `app_name` fills the gap.
    - **Default counting mode** and **grace period**: see below.
 3. On the next screen, **Counting mode per source**, pick the sources on this TV that use the other counting mode.
 
@@ -3142,7 +3212,7 @@ Deleting a tracked TV removes its device, sensors and per-TV totals. The combine
 - [ ] **Step 5: Full verification**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check . && python3 -c "import json; json.load(open('hacs.json')); json.load(open('custom_components/watch_time_tracker/manifest.json')); json.load(open('custom_components/watch_time_tracker/translations/en.json'))"`
-Expected: `70 passed`, lint clean, no JSON errors.
+Expected: `71 passed`, lint clean, no JSON errors.
 
 - [ ] **Step 6: Commit and check CI**
 
@@ -3155,36 +3225,24 @@ After pushing (ask the owner before pushing), check that all three CI jobs pass:
 
 ---
 
-### Task 9: Real-device check and built-in table update (owner)
+### Task 9: Apply the real-TV findings
 
-This needs the physical TVs, so the owner does it. It corresponds to the spec's "Before implementation" section.
+Uses `docs/superpowers/device-check.md` from Task 0.
 
 **Files:**
 - Modify: `custom_components/watch_time_tracker/app_names.py` (`BUILTIN_NAMES`)
+- Modify: `custom_components/watch_time_tracker/const.py` (`DEFAULT_GRACE_PERIOD`, only if needed)
 - Modify: `README.md` (only if findings change the advice)
 - Test: `tests/test_app_names.py` (one lookup test per new table entry)
 
-- [ ] **Step 1: Record the states and attributes**
+- [ ] **Step 1: Re-read the notes**
 
-With HA running and a long-lived access token in `$HA_TOKEN`, for each situation below run:
-
-```bash
-for e in media_player.chromecast remote.slaapkamer_tv media_player.slaapkamer_tv_2 media_player.lg_webos_smart_tv; do
-  curl -s -H "Authorization: Bearer $HA_TOKEN" http://homeassistant.local:8123/api/states/$e \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['entity_id'], d['state'], {k: d['attributes'].get(k) for k in ('source','app_name','app_id','current_activity')})"
-done
-```
-
-Situations:
-- **Slaapkamer TV:** home screen, YouTube, Netflix, Plex and Disney+, each while playing and while paused.
-- **LG:** several short YouTube videos back to back. Note the state between videos and how long it lasts.
-- **LG:** PC or Nintendo Switch over HDMI.
-
-Alternatively, add the TVs in the integration and download the diagnostics. `raw_app`, `resolved_app` and `effective_mode` show the same information.
+Read `docs/superpowers/device-check.md`. If it's missing situations from Task 0, ask the owner to complete it first.
 
 - [ ] **Step 2: Apply the findings**
 
-- Add every raw value that isn't already a friendly name to `BUILTIN_NAMES` (casefolded key → display name). Add launcher/home-screen values with `None`. Add a `test_builtin_lookup`-style test for each one.
+- Add every raw value that isn't already a friendly name to `BUILTIN_NAMES` (casefolded key → display name), e.g. `"f1tv chromecast": "F1 TV"` if the owner wants that name. Add launcher/home-screen values with `None`. Add a `test_builtin_lookup`-style test for each one.
+- If the LG reports `source` for native apps and the Cast entity is `off`/`idle` meanwhile, the detection order stands. If the Cast entity keeps a stale `app_name` while a native app runs, nothing breaks (the LG's `source` wins), but note it in the README.
 - If the Cast entity doesn't report `playing` for an app, note in the README that that app goes in the Slaapkamer TV's per-source list. If most apps don't, recommend "Whenever an app is open" as that TV's default.
 - If HDMI sources report `on` (expected), the README's HDMI advice stands. If they report `playing`, remove that advice.
 - If the measured gap between videos is longer than 60 s, raise `DEFAULT_GRACE_PERIOD` in `const.py` to cover it.
@@ -3218,4 +3276,4 @@ git commit -m "feat: update built-in app names from real-device check"
 | Persistence (Store with version/minor/migration, delayed save, save on stop/unload, load before tracking) | 4, 5 |
 | Edge cases (unavailable via grace, missing entity, source not in `source_list`) | 3, 4 |
 | Diagnostics | 7 |
-| Before implementation | 9 |
+| Before implementation | 0 (record), 9 (apply) |
