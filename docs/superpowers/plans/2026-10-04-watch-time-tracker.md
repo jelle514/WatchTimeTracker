@@ -77,7 +77,7 @@ Task 0 (the owner's real-TV check) comes first, as agreed in the design. Tasks 1
 
 This needs the physical TVs, so the owner does it. It corresponds to the spec's "Before implementation" section. Its results go into a notes file that Task 9 applies.
 
-**Already observed (2026-10-04, casting F1 TV to the LG):**
+**Already observed (2026-10-04):** recorded in `docs/superpowers/device-check.md`. Casting F1 TV to the LG:
 
 ```
 media_player.lg_webos_smart_tv | playing | device_class: tv, source_list: [Disney+, HDMI 4, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube]   (no source)
@@ -87,8 +87,10 @@ media_player.lg_webos_tv_oled55c34la | unavailable
 
 `..._2` is the LG's built-in Chromecast and becomes the Woonkamer TV's extra activity entity. The test `test_casting_to_lg_uses_builtin_chromecast` (Task 4) replays this observation.
 
+PC on HDMI: the LG reports `on` with `source: PC` and `..._2` is `off`. HDMI sources therefore need the per-source "count whenever open" mode, as designed. `test_per_source_mode` (Task 4) replays this.
+
 **Files:**
-- Create: `docs/superpowers/device-check.md`
+- Modify: `docs/superpowers/device-check.md` (started 2026-10-04 with the casting and HDMI observations)
 
 - [ ] **Step 1: Record the states and attributes in each situation**
 
@@ -104,7 +106,7 @@ Situations:
 - **Woonkamer TV (LG):**
   - a native app playing (YouTube, Netflix)
   - several short YouTube videos back to back. Run the template between two videos and note roughly how long the gap lasts.
-  - an HDMI source (PC or Nintendo Switch)
+  - another HDMI source (Nintendo Switch), to confirm it behaves like PC
   - the home screen
 - **Slaapkamer TV (Chromecast with Google TV):**
   - the home screen
@@ -112,7 +114,7 @@ Situations:
 
 - [ ] **Step 2: Write the notes**
 
-`docs/superpowers/device-check.md` gets one section per situation, with the pasted output and one line saying what it means: which raw value names the app, which state the TV reports, and the gap length between videos.
+Fill in the "Still to record" sections of `docs/superpowers/device-check.md`: one section per situation, with the pasted output and one line saying what it means: which raw value names the app, which state the TV reports, and the gap length between videos.
 
 - [ ] **Step 3: Commit**
 

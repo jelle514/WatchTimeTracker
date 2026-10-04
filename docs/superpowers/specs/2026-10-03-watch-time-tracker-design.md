@@ -16,7 +16,7 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 - The existing `sensor.tv_active_source` template helper references `media_player.lg_webos_tv`, which does not exist. It therefore always reports `idle`. The integration replaces it.
 - Playback has short gaps that would undercount without a grace period: the moment between back-to-back videos (e.g. several short YouTube videos in a row), brief pauses, and short network drops. An earlier observation of YouTube "flipping" between `playing` and `paused` turned out to be this, not an app bug.
 - Observed 2026-10-04 while casting F1 TV to the LG: the LG entity reports `playing` with `source_list` but **no `source` attribute**. The built-in Chromecast entity reports `playing` with `app_name: F1TV Chromecast` and `app_id: B3E81094`. App detection therefore falls back to the extra entity's `app_name`; without the extra entity, casting would count as "Unknown app".
-- HDMI inputs (PC, Nintendo Switch, HDMI 4) have no media session. The LG most likely reports `on`, not `playing`, while they are in use, so `playing_only` mode would never count them (to be confirmed, see "Before implementation"). Apps that do report `playing` should still be counted only while playing, which is why the counting mode can be set per source.
+- HDMI inputs (PC, Nintendo Switch, HDMI 4) have no media session. Confirmed 2026-10-04 on the PC input: the LG reports `on` with `source: PC` (the built-in Chromecast is `off`), so `playing_only` mode would never count them. Apps that do report `playing` should still be counted only while playing, which is why the counting mode can be set per source.
 
 ## Decisions
 
@@ -296,7 +296,7 @@ Do the same for the LG, including `media_player.lg_webos_tv_oled55c34la_2` (buil
 - while a native app plays (does the LG then report `source`, and does the Cast entity go `off`/`idle`?).
 
 - while watching several short YouTube videos back to back. Record which state it reports between videos (`paused`, `idle`, or something else) and how long that gap lasts.
-- while using an HDMI source (PC or Nintendo Switch). Record the state and `source`.
+- while using an HDMI source (done 2026-10-04 for PC: `on`, `source: PC`).
 
 Use the results to:
 
