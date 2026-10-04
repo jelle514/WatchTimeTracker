@@ -269,6 +269,25 @@ async def test_stale_cast_session_is_ignored(
     assert hass.states.get("sensor.slaapkamer_disney_watch_time") is None
 
 
+async def test_cast_session_for_ignored_app_is_ignored(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    hass.states.async_set(SLAAPKAMER_ATV, "on", {"app_name": "com.disney.disneyplus"})
+    hass.states.async_set(CAST, "playing", {"app_name": "Backdrop"})
+    await setup(
+        hass,
+        make_entry(
+            device_subentry(
+                CAST_SUBENTRY, "Slaapkamer", SLAAPKAMER_ATV, extra_entity=CAST
+            ),
+            options={CONF_NAME_OVERRIDES: "Backdrop = !ignore"},
+        ),
+    )
+    await clock.advance(120)
+    assert hass.states.get("sensor.slaapkamer_activity").state == "idle"
+    assert hass.states.get("sensor.slaapkamer_disney_watch_time") is None
+
+
 async def test_combined_sums_devices(hass: HomeAssistant, clock: FakeClock) -> None:
     set_lg(hass, "playing", "YouTube")
     hass.states.async_set(CAST, "playing", {"app_name": "YouTube"})

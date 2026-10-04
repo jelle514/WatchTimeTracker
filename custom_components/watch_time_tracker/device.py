@@ -47,6 +47,7 @@ from .tracker import (
 )
 
 _UNKNOWN_APP = ResolvedApp(UNKNOWN_APP_KEY, UNKNOWN_APP_NAME)
+_IGNORED_EXTRA_APP = "!ignored"  # never equals a source key ([a-z0-9_])
 
 
 class TrackedDevice:
@@ -158,13 +159,19 @@ class TrackedDevice:
         )
         if self.raw_app is None:
             self.resolved_app = _UNKNOWN_APP
-        _, extra_app = (
+        extra_raw, extra_app = (
             detect_app({}, extra.attributes, self._overrides) if extra else (None, None)
         )
+        if extra_app is not None:
+            extra_key = extra_app.key
+        elif extra_raw is not None:
+            extra_key = _IGNORED_EXTRA_APP
+        else:
+            extra_key = None
         player_state = combined_player_state(
             player.state if player else None,
             extra.state if extra else None,
-            extra_app.key if extra_app else None,
+            extra_key,
             self.resolved_app.key if self.resolved_app else None,
         )
         app = counting_app(
