@@ -6,9 +6,10 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
-from .app_names import OverrideError, parse_overrides
-from .const import CONF_NAME_OVERRIDES, SUBENTRY_TYPE_DEVICE
+from .app_names import OverrideError, parse_overrides, resolve
+from .const import CONF_NAME_OVERRIDES, DOMAIN, SUBENTRY_TYPE_DEVICE, watch_unique_id
 from .device import TrackedDevice
 from .hub import Hub
 from .storage import TotalsStore
@@ -45,6 +46,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WatchTimeConfigEntry) ->
     except OverrideError as err:
         _LOGGER.error("Ignoring name overrides: %s", err)
         overrides = {}
+
+    # Drop sources the name mapping now ignores, if they never counted any time,
+    # so their sensors don't come back at every startup.
+    ent_reg = er.async_get(hass)
+    for subentry_id, key in store.prune_unused(
+        lambda name: resolve(name, overrides) is None
+    ):
+        unique_id = watch_unique_id(subentry_id, key)
+        if entity_id := ent_reg.async_get_entity_id(Platform.SENSOR, DOMAIN, unique_id):
+            ent_reg.async_remove(entity_id)
 
     hub = Hub(store)
     devices = {

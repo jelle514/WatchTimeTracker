@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WatchTimeConfigEntry
-from .const import COMBINED_DEVICE_ID, DOMAIN
+from .const import COMBINED_DEVICE_ID, DOMAIN, watch_unique_id
 from .device import TrackedDevice
 from .hub import Hub
 from .storage import Totals
@@ -101,7 +101,7 @@ class DeviceWatchTimeSensor(_WatchTimeSensor):
     def __init__(self, device: TrackedDevice, key: str, info: DeviceInfo) -> None:
         super().__init__(device.totals, key, info)
         self._device = device
-        self._attr_unique_id = f"{device.subentry_id}_watch_{key}"
+        self._attr_unique_id = watch_unique_id(device.subentry_id, key)
 
     async def async_added_to_hass(self) -> None:
         """Follow device updates."""
@@ -116,7 +116,7 @@ class CombinedWatchTimeSensor(_WatchTimeSensor):
     def __init__(self, hub: Hub, key: str, info: DeviceInfo) -> None:
         super().__init__(hub.totals, key, info)
         self._hub = hub
-        self._attr_unique_id = f"combined_watch_{key}"
+        self._attr_unique_id = watch_unique_id(None, key)
 
     async def async_added_to_hass(self) -> None:
         """Follow hub updates."""

@@ -1,5 +1,6 @@
 """Persistent watch-time totals."""
 
+from collections.abc import Callable
 from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
@@ -74,6 +75,31 @@ class TotalsStore:
         """Delete a device's totals. Combined totals are kept."""
         if self._data["devices"].pop(subentry_id, None) is not None:
             self.schedule_save()
+
+    def prune_unused(
+        self, is_ignored: Callable[[str], bool]
+    ) -> list[tuple[str | None, str]]:
+        """Delete totals without recorded time whose source is now ignored.
+
+        Returns (subentry_id, key) per deleted total; subentry_id is None for a
+        combined total. Totals with recorded time are always kept.
+        """
+        scopes: list[tuple[str | None, Totals]] = [
+            *self._data["devices"].items(),
+            (None, self._data["combined"]),
+        ]
+        removed: list[tuple[str | None, str]] = []
+        for subentry_id, totals in scopes:
+            for key in [
+                key
+                for key, total in totals.items()
+                if total["minutes"] <= 0 and is_ignored(total["display_name"])
+            ]:
+                del totals[key]
+                removed.append((subentry_id, key))
+        if removed:
+            self.schedule_save()
+        return removed
 
     def schedule_save(self) -> None:
         """Save within SAVE_DELAY_SECONDS."""

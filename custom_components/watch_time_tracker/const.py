@@ -43,3 +43,10 @@ ACTIVITY_IDLE: Final = "idle"
 ACTIVITY_OFF: Final = "off"
 
 COMBINED_DEVICE_ID: Final = "combined"
+
+
+def watch_unique_id(subentry_id: str | None, key: str) -> str:
+    """Unique ID of a watch-time sensor; subentry_id None is the combined sensor."""
+    if subentry_id is None:
+        return f"combined_watch_{key}"
+    return f"{subentry_id}_watch_{key}"

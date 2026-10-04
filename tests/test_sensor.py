@@ -364,6 +364,53 @@ async def test_loads_stored_totals(
     assert "removed_tv" not in entry.runtime_data.store.device_ids()
 
 
+async def test_ignored_source_without_time_is_pruned(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    # Observed: Sonos Beam (an HDMI ARC input on the LG) appeared in the source
+    # list and was ignored afterwards; its 0-minute sensors kept coming back.
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "devices": {
+                LG_SUBENTRY: {
+                    "sonos_beam": {"display_name": "Sonos Beam", "minutes": 0.0},
+                    "netflix": {"display_name": "Netflix", "minutes": 30.0},
+                }
+            },
+            "combined": {
+                "sonos_beam": {"display_name": "Sonos Beam", "minutes": 0.0},
+                "netflix": {"display_name": "Netflix", "minutes": 30.0},
+            },
+        },
+    }
+    set_lg(hass, "off")
+    entry = await setup(hass, lg_entry())
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get("sensor.lg_sonos_beam_watch_time") is not None
+
+    hass.config_entries.async_update_entry(
+        entry,
+        options={CONF_NAME_OVERRIDES: "Sonos Beam = !ignore\nNetflix = !ignore"},
+    )
+    await hass.async_block_till_done()
+
+    for entity_id in (
+        "sensor.lg_sonos_beam_watch_time",
+        "sensor.all_tvs_sonos_beam_watch_time",
+    ):
+        assert ent_reg.async_get(entity_id) is None
+        assert hass.states.get(entity_id) is None
+    store = entry.runtime_data.store
+    assert "sonos_beam" not in store.device_totals(LG_SUBENTRY)
+    assert "sonos_beam" not in store.combined
+    # Recorded time is never dropped, even for a source that is now ignored.
+    assert minutes(hass, "sensor.lg_netflix_watch_time") == pytest.approx(30.0)
+    assert minutes(hass, "sensor.all_tvs_netflix_watch_time") == pytest.approx(30.0)
+
+
 async def test_removing_subentry(hass: HomeAssistant, clock: FakeClock) -> None:
     set_lg(hass, "playing", "YouTube")
     entry = await setup(hass, lg_entry())
