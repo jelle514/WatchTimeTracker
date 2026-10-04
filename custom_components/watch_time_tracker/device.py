@@ -78,6 +78,7 @@ class TrackedDevice:
         self._tracker = Tracker(float(data[CONF_GRACE_PERIOD]))
         self._names = {key: total["display_name"] for key, total in self.totals.items()}
         self.activity: str = ACTIVITY_OFF
+        self._player_state: str | None = None
         self.raw_app: str | None = None
         self.resolved_app: ResolvedApp | None = None
         self._last_source_list: tuple[str, ...] = ()
@@ -174,6 +175,7 @@ class TrackedDevice:
             extra_key,
             self.resolved_app.key if self.resolved_app else None,
         )
+        self._player_state = player_state
         app = counting_app(
             player_state,
             self.resolved_app.key if self.resolved_app else None,
@@ -237,8 +239,7 @@ class TrackedDevice:
         self._cancel_grace = None
         self._apply(self._tracker.grace_expired())
         self._sync_timers()
-        player = self.hass.states.get(self.media_player)
-        self._set_activity(player.state if player else None)
+        self._set_activity(self._player_state)
 
     @callback
     def _live_tick(self, _now: datetime) -> None:
