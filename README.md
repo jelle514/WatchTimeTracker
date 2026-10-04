@@ -64,6 +64,92 @@ com.google.android.apps.tv.launcherx = !ignore
 
 Changing a mapping after time has been counted starts a new sensor. The old sensor keeps its total and stops growing. Re-pick the source on the **Counting mode per source** screen if it used the other mode.
 
+## Dashboard example: watch time donut
+
+A donut chart of the combined totals per source, with brand colors. It needs two cards from HACS (Frontend): [apexcharts-card](https://github.com/RomRider/apexcharts-card) and [auto-entities](https://github.com/thomasloven/lovelace-auto-entities). After installing them, hard-refresh the browser.
+
+Add a card, choose **Manual** and paste:
+
+```yaml
+type: custom:auto-entities
+card:
+  type: custom:apexcharts-card
+  chart_type: donut
+  header:
+    show: true
+    title: Watch time – all TVs
+    show_states: false
+  color_list:
+    - "#4e79a7"
+    - "#f28e2b"
+    - "#e15759"
+    - "#76b7b2"
+    - "#59a14f"
+    - "#edc948"
+    - "#b07aa1"
+    - "#ff9da7"
+    - "#9c755f"
+    - "#bab0ac"
+  apex_config:
+    chart:
+      height: 320
+    stroke:
+      width: 0
+    legend:
+      position: bottom
+      formatter: "EVAL:function (name, opts) { const v = Number(opts.w.globals.series[opts.seriesIndex]) || 0; return String(name).replace(/^All TVs /, '').replace(/ watch time$/, '') + ': ' + v.toFixed(1) + ' h'; }"
+    tooltip:
+      theme: dark
+      fillSeriesColor: false
+      "y":
+        formatter: "EVAL:function (v) { return (Number(v) || 0).toFixed(1) + ' h'; }"
+        title:
+          formatter: "EVAL:function (name) { return String(name).replace(/^All TVs /, '').replace(/ watch time$/, '') + ':'; }"
+    plotOptions:
+      pie:
+        donut:
+          size: 60%
+          labels:
+            show: true
+            total:
+              show: true
+              label: Total
+              formatter: "EVAL:function (w) { return w.globals.seriesTotals.reduce((a, b) => a + b, 0).toFixed(1) + ' h'; }"
+card_param: series
+unique: entity
+filter:
+  include:
+    - entity_id: sensor.all_tvs_netflix_watch_time
+      state: "> 0"
+      options: { color: "#E50914", unit: h, float_precision: 1 }
+    - entity_id: sensor.all_tvs_youtube_watch_time
+      state: "> 0"
+      options: { color: "#FF0000", unit: h, float_precision: 1 }
+    - entity_id: sensor.all_tvs_disney_watch_time
+      state: "> 0"
+      options: { color: "#113CCF", unit: h, float_precision: 1 }
+    - entity_id: sensor.all_tvs_plex_watch_time
+      state: "> 0"
+      options: { color: "#E5A00D", unit: h, float_precision: 1 }
+    # Catch-all for every other source; these use color_list
+    - integration: watch_time_tracker
+      device: All TVs
+      state: "> 0"
+      options: { unit: h, float_precision: 1 }
+  exclude:
+    - state: unavailable
+sort:
+  method: state
+  numeric: true
+  reverse: true
+```
+
+- The `entity_id` lines depend on your sources. Check yours under **Developer tools → States** (filter on `all_tvs_`), and add or remove a rule per source that should get its own color. Any other source with time is picked up by the catch-all.
+- `unique: entity` keeps a source that matches both its own rule and the catch-all from showing up twice.
+- Sources without time are hidden (`state: "> 0"`).
+- `"y"` under `tooltip` must stay quoted: unquoted, Home Assistant's YAML reads it as `true`.
+- For one TV, change `All TVs` in the catch-all and the formatters to that TV's name, and the `all_tvs_` entity ids to that TV's.
+
 ## Removing a TV or the integration
 
 Deleting a tracked TV removes its device, sensors and per-TV totals. The combined totals keep the time it contributed.
