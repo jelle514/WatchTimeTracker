@@ -9,6 +9,87 @@
       "single_instance_allowed": "Watch Time Tracker is already set up. Add more TVs to the existing entry."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "App name overrides",
+        "description": "One mapping per line: `raw value = Display Name`. Use `raw value = !ignore` to never count a value (for example a home screen launcher).",
+        "data": {
+          "name_overrides": "Overrides"
+        }
+      }
+    },
+    "error": {
+      "invalid_override": "Line {line_number} is not valid: `{line}`. Use `raw value = Display Name` or `raw value = !ignore`."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "entry_type": "Tracked TV",
+      "initiate_flow": {
+        "user": "Add tracked TV",
+        "reconfigure": "Reconfigure tracked TV"
+      },
+      "step": {
+        "user": {
+          "title": "Add tracked TV",
+          "data": {
+            "name": "Name",
+            "media_player": "Media player",
+            "extra_entity": "Extra activity entity",
+            "default_mode": "Default counting mode",
+            "grace_period": "Grace period"
+          },
+          "data_description": {
+            "name": "Leave empty to use the media player's name.",
+            "extra_entity": "Optional. A remote or media player that reports the current app when the media player doesn't.",
+            "default_mode": "How sources on this TV are counted, unless you pick them in the next step.",
+            "grace_period": "Short pauses up to this long count as watching."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure tracked TV",
+          "data": {
+            "name": "Name",
+            "media_player": "Media player",
+            "extra_entity": "Extra activity entity",
+            "default_mode": "Default counting mode",
+            "grace_period": "Grace period"
+          },
+          "data_description": {
+            "name": "Leave empty to use the media player's name.",
+            "extra_entity": "Optional. A remote or media player that reports the current app when the media player doesn't.",
+            "default_mode": "How sources on this TV are counted, unless you pick them in the next step.",
+            "grace_period": "Short pauses up to this long count as watching."
+          }
+        },
+        "sources": {
+          "title": "Counting mode per source",
+          "description": "Pick the sources on this TV that use the other counting mode. You can type an app that hasn't been seen yet.",
+          "data": {
+            "count_while_open": "Sources that count whenever they're open",
+            "count_only_while_playing": "Sources that count only while playing"
+          },
+          "data_description": {
+            "count_while_open": "For sources that never report playing, such as HDMI inputs and game consoles.",
+            "count_only_while_playing": "For apps that reliably report playing."
+          }
+        }
+      },
+      "abort": {
+        "already_tracked": "This media player is already tracked by another TV.",
+        "reconfigure_successful": "The TV was reconfigured."
+      }
+    }
+  },
+  "selector": {
+    "default_mode": {
+      "options": {
+        "playing_only": "Only while playing",
+        "app_open": "Whenever an app is open"
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "watch_time": {
