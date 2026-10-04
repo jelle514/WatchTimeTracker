@@ -86,7 +86,18 @@ The Cast entity reports `playing` while Netflix is only open (browsing). For Net
 
 Identical to "Netflix open, nothing playing": `slaapkamer_tv_2` `on` (`com.netflix.ninja`), `chromecast` `playing` (`app_name: Netflix`), remote `com.netflix.ninja`. Confirmed: browsing and watching Netflix can't be told apart on this TV.
 
+### Plex (native app) playing (2026-10-04)
+
+```
+media_player.slaapkamer_tv_2  | on      | app_id/app_name: com.plexapp.android, device_class: tv
+media_player.chromecast       | playing | app_id: AndroidNativeApp, app_name: Plex, media_content_type: movie
+remote.slaapkamer_tv          | on      | current_activity: com.plexapp.android
+```
+
+Same pattern as YouTube: the package name maps to Plex via the built-in table, and the Cast entity supplies `playing`.
+
 ### Still to record
 
+- Casting from a phone to this TV (e.g. YouTube): which package does `slaapkamer_tv_2` report? If it's a cast receiver package, it would win over the Cast entity's friendly `app_name` in the detection order.
 - YouTube paused: does `media_player.chromecast` switch to `paused`?
-- Plex and Disney+, each while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).
+- Disney+, while playing and while paused (`media_player.chromecast`, `remote.slaapkamer_tv`, `media_player.slaapkamer_tv_2`).

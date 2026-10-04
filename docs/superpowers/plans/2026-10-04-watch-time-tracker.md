@@ -19,6 +19,7 @@
 - Native unit minutes (float, never rounded while accumulating). `suggested_unit_of_measurement: h`, `suggested_display_precision: 1`. `device_class: duration`, `state_class: total_increasing`.
 - Unique IDs: `{subentry_id}_activity`, `{subentry_id}_watch_{source_key}`, `combined_watch_{source_key}`.
 - The activity sensor never reports a literal `"unknown"` string. "Unknown app" has the source key `unknown_app`. "Unknown app" counts only while the TV reports `playing`, whatever the default mode (the LG home screen reports `on` with no `source`).
+- The TV counts as playing when the media player or the extra entity says `playing`; the media player alone decides on/off (Chromecast with Google TV: the Android TV Remote player never says `playing`, its Cast entity does).
 - Durations use a monotonic clock (`time.monotonic`). Downtime is never credited.
 - `Store` is the only source of truth (no `RestoreSensor`).
 - `tracker.py` and `app_names.py` have no Home Assistant imports.
@@ -749,6 +750,7 @@ git commit -m "feat: add app detection, name mapping and source keys"
 - Produces:
   - `type Credit = tuple[str, float]`, meaning (source_key, minutes).
   - States: `Idle()`, `Counting(app: str, since: float)`, `Grace(app: str, since: float, gap_start: float)`. All are frozen dataclasses.
+  - `combined_player_state(player_state: str | None, extra_state: str | None) -> str | None`: the media player decides on/off, either entity can say `playing`.
   - `effective_mode(app_key: str, default_mode: str, exceptions: Collection[str]) -> str`
   - `counting_app(player_state: str | None, app_key: str | None, default_mode: str, exceptions: Collection[str]) -> str | None`
   - `Tracker(grace_period: float)` with:
@@ -776,6 +778,7 @@ from custom_components.watch_time_tracker.tracker import (
     Grace,
     Idle,
     Tracker,
+    combined_player_state,
     counting_app,
     effective_mode,
 )
@@ -951,6 +954,21 @@ def test_switching_between_sources_with_different_modes() -> None:
     )
     assert credits == [("pc", 10.0)]
     assert t.state == Counting("youtube", 620)
+
+
+def test_extra_entity_playing_counts_as_playing() -> None:
+    # Observed on a Chromecast with Google TV: the Android TV Remote player
+    # says "on", the Cast entity says "playing".
+    assert combined_player_state("on", "playing") == "playing"
+    assert combined_player_state("playing", "off") == "playing"
+    assert combined_player_state("on", "paused") == "on"
+    assert combined_player_state("on", None) == "on"
+
+
+def test_main_player_decides_off() -> None:
+    assert combined_player_state("off", "playing") == "off"
+    assert combined_player_state("unavailable", "playing") == "unavailable"
+    assert combined_player_state(None, "playing") is None
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1012,6 +1030,21 @@ def effective_mode(app_key: str, default_mode: str, exceptions: Collection[str])
     if app_key not in exceptions:
         return default_mode
     return MODE_APP_OPEN if default_mode == MODE_PLAYING_ONLY else MODE_PLAYING_ONLY
+
+
+def combined_player_state(
+    player_state: str | None, extra_state: str | None
+) -> str | None:
+    """The media player decides on/off; either entity can say it is playing.
+
+    E.g. a Chromecast with Google TV: the Android TV Remote player knows on/off
+    and the app but never says "playing"; its Google Cast entity does.
+    """
+    if player_state is None or player_state in INACTIVE_STATES:
+        return player_state
+    if extra_state == STATE_PLAYING:
+        return STATE_PLAYING
+    return player_state
 
 
 def counting_app(
@@ -1108,7 +1141,7 @@ class Tracker:
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `49 passed`, lint clean.
+Expected: `51 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1152,6 +1185,7 @@ git commit -m "feat: add counting decision and session state machine"
     - `diagnostics() -> dict`
   - `__init__.py`: `RuntimeData(store, hub, devices: dict[str, TrackedDevice])`, `type WatchTimeConfigEntry = ConfigEntry[RuntimeData]`, `PLATFORMS`.
   - Entity IDs used by tests (device "LG", combined device "All TVs"): `sensor.lg_activity`, `sensor.lg_youtube_watch_time`, `sensor.all_tvs_youtube_watch_time`.
+  - `test_google_tv_cast_entity_supplies_playing` replays the Slaapkamer TV observations: Android TV Remote player `on` with a package name + Cast entity `playing` → counted; launcher + Cast `off` → not counted.
   - `test_home_screen_is_not_counted` replays the Task 0 home-screen observation (LG `on`, no `source`, `app_open` default → not counted, activity `idle`).
   - `test_casting_to_lg_uses_builtin_chromecast` replays the Task 0 observation: LG `playing` with no `source`, plus `media_player.lg_webos_tv_oled55c34la_2` reporting `app_name: F1TV Chromecast`.
 
@@ -1188,6 +1222,7 @@ LG_YOUTUBE = "sensor.lg_youtube_watch_time"
 LG_PC = "sensor.lg_pc_watch_time"
 LG_ACTIVITY = "sensor.lg_activity"
 LG_CAST = "media_player.lg_webos_tv_oled55c34la_2"  # built-in Chromecast
+SLAAPKAMER_ATV = "media_player.slaapkamer_tv_2"  # Android TV Remote player
 ALL_YOUTUBE = "sensor.all_tvs_youtube_watch_time"
 
 
@@ -1347,6 +1382,40 @@ async def test_casting_to_lg_uses_builtin_chromecast(
     assert hass.states.get(LG_ACTIVITY).state == "F1TV Chromecast"
     await clock.advance(60)
     assert minutes(hass, "sensor.lg_f1tv_chromecast_watch_time") == pytest.approx(
+        1.0, abs=0.1
+    )
+
+
+async def test_google_tv_cast_entity_supplies_playing(
+    hass: HomeAssistant, clock: FakeClock
+) -> None:
+    # Observed on the Slaapkamer TV: the Android TV Remote player says "on"
+    # with the package name, its Google Cast entity says "playing".
+    hass.states.async_set(
+        SLAAPKAMER_ATV, "on", {"app_name": "com.google.android.youtube.tv"}
+    )
+    hass.states.async_set(CAST, "playing", {"app_name": "YouTube"})
+    await setup(
+        hass,
+        make_entry(
+            device_subentry(
+                CAST_SUBENTRY, "Slaapkamer", SLAAPKAMER_ATV, extra_entity=CAST
+            )
+        ),
+    )
+    assert hass.states.get("sensor.slaapkamer_activity").state == "YouTube"
+    await clock.advance(60)
+
+    # Home screen: launcher (ignored) and no cast session.
+    hass.states.async_set(
+        SLAAPKAMER_ATV, "on", {"app_name": "com.google.android.apps.tv.launcherx"}
+    )
+    hass.states.async_set(CAST, "off", {})
+    await hass.async_block_till_done()
+    await clock.advance(120)
+
+    assert hass.states.get("sensor.slaapkamer_activity").state == "idle"
+    assert minutes(hass, "sensor.slaapkamer_youtube_watch_time") == pytest.approx(
         1.0, abs=0.1
     )
 
@@ -1583,7 +1652,15 @@ from .const import (
 )
 from .hub import Hub
 from .storage import Totals, TotalsStore
-from .tracker import Counting, Credit, Grace, Tracker, counting_app, effective_mode
+from .tracker import (
+    Counting,
+    Credit,
+    Grace,
+    Tracker,
+    combined_player_state,
+    counting_app,
+    effective_mode,
+)
 
 _UNKNOWN_APP = ResolvedApp(UNKNOWN_APP_KEY, UNKNOWN_APP_NAME)
 
@@ -1698,7 +1775,9 @@ class TrackedDevice:
             if self.raw_app is None
             else resolve(self.raw_app, self._overrides)
         )
-        player_state = player.state if player else None
+        player_state = combined_player_state(
+            player.state if player else None, extra.state if extra else None
+        )
         app = counting_app(
             player_state,
             self.resolved_app.key if self.resolved_app else None,
@@ -1817,7 +1896,7 @@ class TrackedDevice:
 ```
 
 Key behaviour to preserve:
-- `_evaluate` runs on every state change of the media player or extra entity. It syncs `source_list` into sensors, detects and resolves the app (no raw value → "Unknown app"), asks `counting_app` for the per-source mode decision, feeds the tracker, then syncs timers and the activity state.
+- `_evaluate` runs on every state change of the media player or extra entity. It syncs `source_list` into sensors, detects and resolves the app (no raw value → "Unknown app"), combines the two entities' states with `combined_player_state`, asks `counting_app` for the per-source mode decision, feeds the tracker, then syncs timers and the activity state.
 - The grace timer exists only while the tracker is in `Grace`, and the 60 s live tick only while it is in `Counting`.
 
 - [ ] **Step 6: Implement the sensors**
@@ -2080,7 +2159,7 @@ The `{app}` placeholder comes from each sensor's `_attr_translation_placeholders
 - [ ] **Step 9: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `61 passed`, lint clean.
+Expected: `64 passed`, lint clean.
 
 - [ ] **Step 10: Commit**
 
@@ -2275,7 +2354,7 @@ async def _async_update_listener(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/ruff check --fix tests/test_sensor.py && .venv/bin/ruff format . && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `64 passed`, lint clean.
+Expected: `67 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -2934,7 +3013,7 @@ Design notes:
 - [ ] **Step 5: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `71 passed`, lint clean.
+Expected: `74 passed`, lint clean.
 
 - [ ] **Step 6: Commit**
 
@@ -3035,7 +3114,7 @@ async def async_get_config_entry_diagnostics(
 - [ ] **Step 4: Run the tests and lint**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check .`
-Expected: `72 passed`, lint clean.
+Expected: `75 passed`, lint clean.
 
 - [ ] **Step 5: Commit**
 
@@ -3194,12 +3273,23 @@ Copy `custom_components/watch_time_tracker` into your Home Assistant `config/cus
 1. **Settings → Devices & services → Add integration → Watch Time Tracker.**
 2. On the Watch Time Tracker entry, choose **Add tracked TV** for each TV:
    - **Media player**: the TV's media player entity. Its state decides playing, on or off.
-   - **Extra activity entity** (optional): a remote or media player that reports the current app when the media player doesn't, for example `remote.<name>` from the Android TV Remote integration for a Chromecast with Google TV.
-     For a TV with Chromecast built in (such as many LG webOS TVs), use the TV's Google Cast media player: while you cast, the TV itself reports `playing` without naming the app, and the Cast entity's `app_name` fills the gap.
+   - **Extra activity entity** (optional): a remote or media player that names the current app when the media player doesn't, or says `playing` when the media player can't. The TV counts as playing when either entity says `playing`; the media player alone decides whether the TV is on. See the example setups below.
    - **Default counting mode** and **grace period**: see below.
 3. On the next screen, **Counting mode per source**, pick the sources on this TV that use the other counting mode.
 
 Each TV gets an **Activity** sensor and a **watch time** sensor per source. The **All TVs** device has the combined watch time sensors. Totals are stored in minutes and shown in hours with one decimal.
+
+## Example setups
+
+**LG webOS TV with Chromecast built in**
+- Media player: the LG webOS entity.
+- Extra activity entity: the TV's Google Cast entity. While you cast, the LG says `playing` without naming the app; the Cast entity names it.
+- Counting mode per source: tick the HDMI inputs (PC, game consoles). They report `on`, never `playing`.
+
+**Chromecast with Google TV**
+- Media player: the Android TV Remote media player. It knows on/off and the app (as a package name, mapped to a friendly name), but never says `playing`.
+- Extra activity entity: the Google Cast entity. It says `playing` during playback and is `off` on the home screen.
+- Netflix reports `playing` as soon as it is open, so browsing Netflix counts as Netflix watch time. No entity reports anything better.
 
 ## Counting modes
 
@@ -3236,7 +3326,7 @@ Deleting a tracked TV removes its device, sensors and per-TV totals. The combine
 - [ ] **Step 5: Full verification**
 
 Run: `.venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/ruff format --check . && python3 -c "import json; json.load(open('hacs.json')); json.load(open('custom_components/watch_time_tracker/manifest.json')); json.load(open('custom_components/watch_time_tracker/translations/en.json'))"`
-Expected: `72 passed`, lint clean, no JSON errors.
+Expected: `75 passed`, lint clean, no JSON errors.
 
 - [ ] **Step 6: Commit and check CI**
 

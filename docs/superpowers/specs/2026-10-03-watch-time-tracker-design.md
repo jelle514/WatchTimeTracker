@@ -12,7 +12,7 @@ A Home Assistant custom integration that tracks how long each source/app is watc
 
 - Home Assistant 2026.9.4, time zone Europe/Amsterdam.
 - **Woonkamer TV** (LG webOS): `media_player.lg_webos_smart_tv`. Reports `source` and `source_list` (Disney+, HDMI 4, NPO Start, Netflix, Nintendo Switch Game Console, PC, Plex, Sonos Beam, YouTube). `media_player.lg_webos_tv_oled55c34la` is a stale duplicate (unavailable) and should not be used. `media_player.lg_webos_tv_oled55c34la_2` is the LG's **built-in Chromecast** (Google Cast) and is the LG's extra activity entity.
-- **Slaapkamer TV** (Chromecast with Google TV): `media_player.chromecast` (Google Cast), `media_player.slaapkamer_tv_2` (Android TV Remote, `assumed_state`), `remote.slaapkamer_tv` (Android TV Remote, `current_activity`). It has no `source_list`.
+- **Slaapkamer TV** (Chromecast with Google TV): `media_player.chromecast` (Google Cast), `media_player.slaapkamer_tv_2` (Android TV Remote, `assumed_state`), `remote.slaapkamer_tv` (Android TV Remote, `current_activity`). It has no `source_list`. Observed 2026-10-04: `slaapkamer_tv_2` reports `on`/`off` and the app as a package name (e.g. `com.google.android.youtube.tv`) but never `playing`; `chromecast` reports `playing` with a friendly `app_name` during YouTube playback and is `off` on the home screen; for Netflix it reports `playing` as soon as the app is open. Setup: media player `slaapkamer_tv_2`, extra activity entity `chromecast`.
 - The existing `sensor.tv_active_source` template helper references `media_player.lg_webos_tv`, which does not exist. It therefore always reports `idle`. The integration replaces it.
 - Playback has short gaps that would undercount without a grace period: the moment between back-to-back videos (e.g. several short YouTube videos in a row), brief pauses, and short network drops. An earlier observation of YouTube "flipping" between `playing` and `paused` turned out to be this, not an app bug.
 - Observed 2026-10-04 while casting F1 TV to the LG: the LG entity reports `playing` with `source_list` but **no `source` attribute**. The built-in Chromecast entity reports `playing` with `app_name: F1TV Chromecast` and `app_id: B3E81094`. App detection therefore falls back to the extra entity's `app_name`; without the extra entity, casting would count as "Unknown app".
@@ -85,7 +85,7 @@ tests/
 |---|---|---|---|
 | Name | yes | media player's friendly name | Device name and sub-entry title |
 | Media player | yes | — | Entity selector, `media_player` domain. Its state decides playing, on or off |
-| Extra activity entity | no | — | Entity selector (`remote`, `media_player`). Used when the media player doesn't identify the app |
+| Extra activity entity | no | — | Entity selector (`remote`, `media_player`). Names the app when the media player doesn't, and can supply `playing` (see "Situation") |
 | Default counting mode | yes | Playing only | `playing_only` or `app_open` |
 | Grace period | yes | 60 s | 0–600 s |
 
@@ -175,11 +175,15 @@ Removing a sub-entry deletes its device and its entities (through the `config_su
 
 ### Situation
 
-At every state change of the media player or the extra entity, the device works out its situation:
+At every state change of the media player or the extra entity, the device works out its situation.
+
+First the **player state**: the media player's state, except that it becomes `playing` when the media player is on (not `off`, `unavailable`, `unknown`, `standby`, or missing) and the extra entity's state is `playing`. The media player alone decides on/off; either entity can say it is playing. This is needed for a Chromecast with Google TV, whose Android TV Remote player never says `playing` while its Cast entity does.
+
+Then:
 
 - **Counting(app)** when the app is not ignored and the device is active for that app's counting mode:
-  - `playing_only`: the media player's state is `playing`
-  - `app_open`: the media player's state is not one of `off`, `unavailable`, `unknown`, `standby`
+  - `playing_only`: the player state is `playing`
+  - `app_open`: the player state is not one of `off`, `unavailable`, `unknown`, `standby`
 
   The app is detected first, then its mode is looked up: the opposite of the default if the app's source key is in the per-source list, otherwise the default. If no app can be identified, `app` is "Unknown app" and it counts only while `playing`, whatever the default mode. On the LG the home screen reports `on` with no `source`, which looks exactly like an unknown app, so this keeps home-screen time out of the totals even with an `app_open` default.
 - **NotCounting** otherwise.
@@ -264,6 +268,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
     - per-source mode: an HDMI source counts while `on` and an app on the same TV counts only while `playing`
     - switching between sources with different modes
     - "Unknown app" counts only while playing, even with an `app_open` default
+    - player state: the extra entity's `playing` counts when the media player is on; the media player being off always wins
     - a grace period of 0
     - live ticks don't double-count
     - negative time differences
@@ -278,6 +283,7 @@ States: `Idle`, `Counting(app, since)`, `Grace(app, since, gap_start)`.
   - per-source step: options from `source_list` and stored sources, custom values, labels follow the default mode, selections stored as source keys
   - unidentified apps are credited to "Unknown app" while playing
   - the home screen (`on`, no source) is not counted with an `app_open` default
+  - Google TV setup (Android TV Remote player + Cast entity): playing YouTube is counted, the home screen is not
   - credits reach the device and combined sensors
   - totals survive a restart
   - removing a sub-entry removes its entities and stored data and keeps the combined totals
