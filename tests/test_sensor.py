@@ -33,6 +33,8 @@ LG_ACTIVITY = "sensor.lg_activity"
 LG_CAST = "media_player.lg_webos_tv_oled55c34la_2"  # built-in Chromecast
 SLAAPKAMER_ATV = "media_player.slaapkamer_tv_2"  # Android TV Remote player
 ALL_YOUTUBE = "sensor.all_tvs_youtube_watch_time"
+LG_TOTAL = "sensor.lg_total_watch_time"
+ALL_TOTAL = "sensor.all_tvs_total_watch_time"
 
 
 def minutes(hass: HomeAssistant, entity_id: str) -> float:
@@ -329,6 +331,44 @@ async def test_combined_sums_devices(hass: HomeAssistant, clock: FakeClock) -> N
     )
     await clock.advance(60)
     assert minutes(hass, ALL_YOUTUBE) == pytest.approx(2.0, abs=0.1)
+
+
+async def test_total_watch_time_sums_sources(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "devices": {
+                LG_SUBENTRY: {"plex": {"display_name": "Plex", "minutes": 90.0}}
+            },
+            "combined": {"plex": {"display_name": "Plex", "minutes": 120.0}},
+        },
+    }
+    set_lg(hass, "playing", "YouTube")
+    hass.states.async_set(CAST, "playing", {"app_name": "Netflix"})
+    await setup(
+        hass,
+        make_entry(
+            device_subentry(LG_SUBENTRY, "LG", LG),
+            device_subentry(CAST_SUBENTRY, "Slaapkamer", CAST),
+        ),
+    )
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get(LG_TOTAL).unique_id == f"{LG_SUBENTRY}_total_watch"
+    assert ent_reg.async_get(ALL_TOTAL).unique_id == "combined_total_watch"
+    state = hass.states.get(ALL_TOTAL)
+    assert state.attributes["device_class"] == "duration"
+    assert state.attributes["state_class"] == "total_increasing"
+
+    await clock.advance(60)
+    assert minutes(hass, LG_TOTAL) == pytest.approx(91.0, abs=0.1)
+    assert minutes(hass, "sensor.slaapkamer_total_watch_time") == pytest.approx(
+        1.0, abs=0.1
+    )
+    assert minutes(hass, ALL_TOTAL) == pytest.approx(122.0, abs=0.1)
 
 
 async def test_totals_survive_restart(hass: HomeAssistant, clock: FakeClock) -> None:

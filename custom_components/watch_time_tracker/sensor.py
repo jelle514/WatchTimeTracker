@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WatchTimeConfigEntry
-from .const import COMBINED_DEVICE_ID, DOMAIN, watch_unique_id
+from .const import COMBINED_DEVICE_ID, DOMAIN, total_unique_id, watch_unique_id
 from .device import TrackedDevice
 from .hub import Hub
 from .storage import Totals
@@ -41,7 +41,10 @@ async def async_setup_entry(
         async_add_entities([CombinedWatchTimeSensor(hub, key, combined_info)])
 
     async_add_entities(
-        CombinedWatchTimeSensor(hub, key, combined_info) for key in hub.totals
+        [
+            CombinedTotalSensor(hub, combined_info),
+            *(CombinedWatchTimeSensor(hub, key, combined_info) for key in hub.totals),
+        ]
     )
     entry.async_on_unload(hub.add_new_source_listener(add_combined))
 
@@ -64,6 +67,7 @@ async def async_setup_entry(
         async_add_entities(
             [
                 ActivitySensor(device, info),
+                DeviceTotalSensor(device, info),
                 *(DeviceWatchTimeSensor(device, key, info) for key in device.totals),
             ],
             config_subentry_id=subentry_id,
@@ -71,17 +75,22 @@ async def async_setup_entry(
         entry.async_on_unload(device.add_new_source_listener(add_source))
 
 
-class _WatchTimeSensor(SensorEntity):
+class _MinutesSensor(SensorEntity):
     """Running total in minutes, displayed in hours."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_translation_key = "watch_time"
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_suggested_unit_of_measurement = UnitOfTime.HOURS
     _attr_suggested_display_precision = 0
+
+
+class _WatchTimeSensor(_MinutesSensor):
+    """Watch time of one source."""
+
+    _attr_translation_key = "watch_time"
 
     def __init__(self, totals: Totals, key: str, info: DeviceInfo) -> None:
         self._totals = totals
@@ -93,6 +102,21 @@ class _WatchTimeSensor(SensorEntity):
     def native_value(self) -> float:
         """Total minutes."""
         return self._totals[self._key]["minutes"]
+
+
+class _TotalSensor(_MinutesSensor):
+    """Watch time of all sources together."""
+
+    _attr_translation_key = "total_watch_time"
+
+    def __init__(self, totals: Totals, info: DeviceInfo) -> None:
+        self._totals = totals
+        self._attr_device_info = info
+
+    @property
+    def native_value(self) -> float:
+        """Total minutes over all sources."""
+        return sum(total["minutes"] for total in self._totals.values())
 
 
 class DeviceWatchTimeSensor(_WatchTimeSensor):
@@ -117,6 +141,34 @@ class CombinedWatchTimeSensor(_WatchTimeSensor):
         super().__init__(hub.totals, key, info)
         self._hub = hub
         self._attr_unique_id = watch_unique_id(None, key)
+
+    async def async_added_to_hass(self) -> None:
+        """Follow hub updates."""
+        self.async_on_remove(self._hub.add_update_listener(self.async_write_ha_state))
+
+
+class DeviceTotalSensor(_TotalSensor):
+    """Watch time of all sources on one TV."""
+
+    def __init__(self, device: TrackedDevice, info: DeviceInfo) -> None:
+        super().__init__(device.totals, info)
+        self._device = device
+        self._attr_unique_id = total_unique_id(device.subentry_id)
+
+    async def async_added_to_hass(self) -> None:
+        """Follow device updates."""
+        self.async_on_remove(
+            self._device.add_update_listener(self.async_write_ha_state)
+        )
+
+
+class CombinedTotalSensor(_TotalSensor):
+    """Watch time of all sources over all TVs."""
+
+    def __init__(self, hub: Hub, info: DeviceInfo) -> None:
+        super().__init__(hub.totals, info)
+        self._hub = hub
+        self._attr_unique_id = total_unique_id(None)
 
     async def async_added_to_hass(self) -> None:
         """Follow hub updates."""

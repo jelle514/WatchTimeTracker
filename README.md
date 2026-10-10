@@ -1,6 +1,6 @@
 # Watch Time Tracker
 
-A Home Assistant custom integration that tracks how long each app or source is watched on your TVs. You get a running watch-time total per source for every TV, plus a combined total per source over all TVs.
+A Home Assistant custom integration that tracks how long each app or source is watched on your TVs. You get a running watch-time total per source for every TV, plus a combined total per source over all TVs, and a total over all sources for each TV and for all TVs together.
 
 ## Installation
 
@@ -23,7 +23,7 @@ Copy `custom_components/watch_time_tracker` into your Home Assistant `config/cus
    - **Default counting mode** and **grace period**: see below.
 3. On the next screen, **Counting mode per source**, pick the sources on this TV that use the other counting mode.
 
-Each TV gets an **Activity** sensor and a **watch time** sensor per source. The **All TVs** device has the combined watch time sensors. Totals are stored in minutes and shown in whole hours. For more detail, change a sensor's **Display precision** (or its unit) in its settings.
+Each TV gets an **Activity** sensor, a **watch time** sensor per source and a **Total watch time** sensor for all its sources together. The **All TVs** device has the combined watch time sensors, including a **Total watch time** over all TVs and sources. Totals are stored in minutes and shown in whole hours. For more detail, change a sensor's **Display precision** (or its unit) in its settings.
 
 ## Example setups
 
@@ -144,6 +144,10 @@ filter:
       options: { unit: h, float_precision: 1 }
   exclude:
     - state: unavailable
+    # The total of all sources would count everything twice
+    - entity_id: sensor.all_tvs_total_watch_time
+    # Time the TVs couldn't link to an app
+    - entity_id: sensor.all_tvs_unknown_app_watch_time
 sort:
   method: state
   numeric: true
@@ -154,7 +158,62 @@ sort:
 - `unique: entity` keeps a source that matches both its own rule and the catch-all from showing up twice.
 - Sources without time are hidden (`state: "> 0"`).
 - `"y"` under `tooltip` must stay quoted: unquoted, Home Assistant's YAML reads it as `true`.
-- For one TV, change `All TVs` in the catch-all and the formatters to that TV's name, and the `all_tvs_` entity ids to that TV's.
+- For one TV, change `All TVs` in the catch-all and the formatters to that TV's name, and the `all_tvs_` entity ids (including the excluded ones) to that TV's.
+
+## Dashboard example: today, last 7 days, last 30 days
+
+The watch time sensors only count up, so Home Assistant keeps long-term statistics for them. The built-in statistic cards can show how much a sensor grew in any period, without helpers or extra sensors. This works for the **Total watch time** sensors and for any single source.
+
+Watch time for today, the last 7 days and the last 30 days over all TVs:
+
+```yaml
+type: horizontal-stack
+cards:
+  - type: statistic
+    entity: sensor.all_tvs_total_watch_time
+    name: Today
+    stat_type: change
+    period:
+      calendar:
+        period: day
+  - type: statistic
+    entity: sensor.all_tvs_total_watch_time
+    name: Last 7 days
+    stat_type: change
+    period:
+      rolling_window:
+        duration:
+          days: 7
+  - type: statistic
+    entity: sensor.all_tvs_total_watch_time
+    name: Last 30 days
+    stat_type: change
+    period:
+      rolling_window:
+        duration:
+          days: 30
+```
+
+Watch time per day for the last two weeks, one bar per TV:
+
+```yaml
+type: statistics-graph
+title: Watch time per day
+entities:
+  - sensor.lg_total_watch_time
+  - sensor.slaapkamer_total_watch_time
+chart_type: bar
+period: day
+days_to_show: 14
+stat_types:
+  - change
+```
+
+- Replace the entity ids with your TVs' **Total watch time** sensors (or any source's watch time sensor).
+- Use `period: week` or `period: month` with a larger `days_to_show` for weekly or monthly bars.
+- For calendar periods instead of rolling ones, use `calendar: {period: week}` or `calendar: {period: month}` in the statistic card.
+- The sensors show whole hours, so a short day shows as `0 h`. Raise the sensor's **Display precision** in its settings (e.g. to 1 decimal) for the cards too.
+- Statistics start when a sensor is created: the **Total watch time** sensors (added in 0.1.4) only show time watched since the update, and the 30-day view fills up over the following month.
 
 ## Removing a TV or the integration
 

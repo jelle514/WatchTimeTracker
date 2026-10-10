@@ -107,6 +107,9 @@
       "watch_time": {
         "name": "{app} watch time"
       },
+      "total_watch_time": {
+        "name": "Total watch time"
+      },
       "activity": {
         "name": "Activity"
       }

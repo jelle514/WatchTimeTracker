@@ -50,3 +50,11 @@ def watch_unique_id(subentry_id: str | None, key: str) -> str:
     if subentry_id is None:
         return f"combined_watch_{key}"
     return f"{subentry_id}_watch_{key}"
+
+
+def total_unique_id(subentry_id: str | None) -> str:
+    """Unique ID of an all-sources sensor; subentry_id None is the combined sensor.
+
+    Doesn't match the watch_unique_id pattern, whatever the source key.
+    """
+    return f"{subentry_id or COMBINED_DEVICE_ID}_total_watch"
