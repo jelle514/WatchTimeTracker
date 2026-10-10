@@ -6,6 +6,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 import pytest
 
 from custom_components.watch_time_tracker.const import (
+    CONF_MODE_EXCEPTIONS,
     CONF_NAME_OVERRIDES,
     DOMAIN,
     MODE_APP_OPEN,
@@ -476,3 +477,134 @@ async def test_source_list_change_creates_new_sensor(
     await hass.async_block_till_done()
     assert hass.states.get("sensor.lg_live_tv_watch_time") is not None
     assert hass.states.get("sensor.all_tvs_live_tv_watch_time") is not None
+
+
+def kpn_storage(**extra_totals: float) -> dict:
+    """Stored data with KPN time under its raw cast name (as observed)."""
+    totals = {
+        "kpn_tv_ontvanger": {"display_name": "KPN TV+ ontvanger", "minutes": 52.5},
+        **{
+            key: {"display_name": "KPN TV+", "minutes": value}
+            for key, value in extra_totals.items()
+        },
+    }
+    return {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "devices": {LG_SUBENTRY: {k: dict(v) for k, v in totals.items()}},
+            "combined": {k: dict(v) for k, v in totals.items()},
+        },
+    }
+
+
+async def test_renamed_source_keeps_its_time(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    hass_storage[STORAGE_KEY] = kpn_storage()
+    set_lg(hass, "off")
+    entry = await setup(
+        hass, lg_entry(default_mode=MODE_APP_OPEN, mode_exceptions=["kpn_tv_ontvanger"])
+    )
+    lg_kpn = "sensor.lg_kpn_tv_ontvanger_watch_time"
+    all_kpn = "sensor.all_tvs_kpn_tv_ontvanger_watch_time"
+    assert minutes(hass, lg_kpn) == pytest.approx(52.5)
+
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_NAME_OVERRIDES: "KPN TV+ ontvanger = KPN TV+"}
+    )
+    await hass.async_block_till_done()
+
+    # The sensors carry over (same entity ID, so history and dashboards stay).
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get(lg_kpn).unique_id == f"{LG_SUBENTRY}_watch_kpn_tv"
+    assert ent_reg.async_get(all_kpn).unique_id == "combined_watch_kpn_tv"
+    assert minutes(hass, lg_kpn) == pytest.approx(52.5)
+    assert minutes(hass, all_kpn) == pytest.approx(52.5)
+    assert (
+        hass.states.get(lg_kpn).attributes["friendly_name"] == "LG KPN TV+ watch time"
+    )
+    assert hass.states.get("sensor.lg_kpn_tv_watch_time") is None
+    store = entry.runtime_data.store
+    for totals in (store.device_totals(LG_SUBENTRY), store.combined):
+        assert "kpn_tv_ontvanger" not in totals
+        assert totals["kpn_tv"] == {"display_name": "KPN TV+", "minutes": 52.5}
+    # The per-source counting mode follows the new key.
+    assert entry.subentries[LG_SUBENTRY].data[CONF_MODE_EXCEPTIONS] == ["kpn_tv"]
+
+    # Counting continues on the same sensor, in the same mode (only while playing).
+    set_lg(hass, "on", "KPN TV+ ontvanger")
+    await clock.advance(60)
+    assert minutes(hass, lg_kpn) == pytest.approx(52.5)
+    set_lg(hass, "playing", "KPN TV+ ontvanger")
+    await clock.advance(60)
+    assert minutes(hass, lg_kpn) == pytest.approx(53.5)
+
+    # Reloading with unchanged overrides moves nothing.
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert minutes(hass, lg_kpn) == pytest.approx(53.5)
+    assert ent_reg.async_get(lg_kpn).unique_id == f"{LG_SUBENTRY}_watch_kpn_tv"
+
+
+async def test_rename_saved_before_upgrade_is_merged(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    # The override was added on a version that didn't carry time over: the new
+    # sensor already counted 5 minutes and the old one is stale.
+    hass_storage[STORAGE_KEY] = kpn_storage(kpn_tv=5.0)
+    ent_reg = er.async_get(hass)
+    entry = make_entry(
+        device_subentry(LG_SUBENTRY, "LG", LG),
+        options={CONF_NAME_OVERRIDES: "KPN TV+ ontvanger = KPN TV+"},
+    )
+    entry.add_to_hass(hass)
+    for unique_id, object_id in (
+        (f"{LG_SUBENTRY}_watch_kpn_tv_ontvanger", "lg_kpn_tv_ontvanger_watch_time"),
+        (f"{LG_SUBENTRY}_watch_kpn_tv", "lg_kpn_tv_watch_time"),
+    ):
+        ent_reg.async_get_or_create(
+            "sensor",
+            DOMAIN,
+            unique_id,
+            config_entry=entry,
+            suggested_object_id=object_id,
+        )
+    set_lg(hass, "off")
+    await setup(hass, entry)
+
+    assert ent_reg.async_get("sensor.lg_kpn_tv_ontvanger_watch_time") is None
+    assert hass.states.get("sensor.lg_kpn_tv_watch_time") is not None
+    assert minutes(hass, "sensor.all_tvs_kpn_tv_watch_time") == pytest.approx(57.5)
+    store = entry.runtime_data.store
+    for totals in (store.device_totals(LG_SUBENTRY), store.combined):
+        assert "kpn_tv_ontvanger" not in totals
+        assert totals["kpn_tv"]["minutes"] == pytest.approx(57.5)
+
+
+async def test_removed_override_restores_display_name(
+    hass: HomeAssistant, clock: FakeClock, hass_storage: dict
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "devices": {
+                LG_SUBENTRY: {
+                    "gaming_pc": {"display_name": "Gaming PC", "minutes": 30.0}
+                }
+            },
+            "combined": {"gaming_pc": {"display_name": "Gaming PC", "minutes": 30.0}},
+            "name_overrides": "PC = Gaming PC",
+        },
+    }
+    set_lg(hass, "on", "PC")
+    entry = await setup(hass, lg_entry())
+
+    # "PC" is in the LG's source list, so its name is known again at once.
+    store = entry.runtime_data.store
+    for totals in (store.device_totals(LG_SUBENTRY), store.combined):
+        assert totals["pc"] == {"display_name": "PC", "minutes": 30.0}
+        assert "gaming_pc" not in totals

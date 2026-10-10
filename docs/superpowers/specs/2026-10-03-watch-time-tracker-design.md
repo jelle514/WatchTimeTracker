@@ -66,7 +66,7 @@ tests/
 - **Brand images:** shipped in `brand/` inside the integration (supported since HA 2026.3). The HACS validation action may still need `ignore: brands`.
 - **Releases:** every version is a GitHub release whose tag matches `manifest.json`'s `version`, so HACS offers updates.
 - **CI:** a GitHub Actions workflow running the HACS validation action, `hassfest` and pytest on push and pull request.
-- **README:** covers installation (HACS custom repository and manual copy), setup steps, an explanation of the counting modes (including the per-source list and which sources typically need it, such as HDMI inputs) and grace period, the name mapping format (including ignored values), and the fact that changing a name override starts a new sensor (see "Name mapping changes").
+- **README:** covers installation (HACS custom repository and manual copy), setup steps, an explanation of the counting modes (including the per-source list and which sources typically need it, such as HDMI inputs) and grace period, the name mapping format (including ignored values), and how renaming a source carries its watch time over (see "Name mapping changes").
 
 ## Configuration
 
@@ -129,7 +129,12 @@ The built-in table starts with common Google TV / Android TV package names (YouT
 
 ### Name mapping changes
 
-Changing an override after time has been counted changes the source key. The old sensor keeps its total and stops growing, and a new sensor starts at 0. A per-source counting mode selection for the old key no longer applies and has to be set again for the new one. Merging totals is out of scope.
+Changing an override after time has been counted changes the source key. Since 0.1.3 the time carries over:
+
+- The store records the override text the totals were last keyed with (`name_overrides`; missing in older files, which counts as no overrides).
+- At setup, every raw value in the old or new overrides is resolved with both. An old key whose values now resolve to one new key is moved: per-TV and combined totals are added to the new key, the old sensor's unique ID is changed to the new key (same entity ID, history kept) or the old sensor is removed if the new key already has one, and per-source counting modes follow the new key.
+- Nothing moves when a known raw value (override or built-in) still resolves to the old key, or when the old key's values go to different new keys: a total can't be split.
+- A source whose key stays the same but whose display name changes gets the new name in the store when the TV next reports it; the sensor name follows at the next reload.
 
 ## Devices and entities
 

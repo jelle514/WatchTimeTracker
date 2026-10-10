@@ -24,6 +24,9 @@ class Hub:
     def ensure_source(self, key: str, display_name: str) -> None:
         """Make sure a combined total (and sensor) exists for a source key."""
         if key in self.totals:
+            if self.totals[key]["display_name"] != display_name:
+                self.totals[key]["display_name"] = display_name
+                self._store.schedule_save()
             return
         self.totals[key] = {"display_name": display_name, "minutes": 0.0}
         self._store.schedule_save()

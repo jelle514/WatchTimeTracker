@@ -10,6 +10,7 @@ from custom_components.watch_time_tracker.app_names import (
     make_key,
     parse_overrides,
     raw_app_values,
+    renamed_keys,
     resolve,
 )
 
@@ -132,3 +133,63 @@ def test_detect_app_nothing_to_detect() -> None:
 
 def test_builtin_names_are_casefolded() -> None:
     assert all(key == key.casefold() for key in BUILTIN_NAMES)
+
+
+def test_renamed_keys_new_override() -> None:
+    # Observed: a cast app reported as "KPN TV+ ontvanger", renamed to "KPN TV+".
+    current = {"kpn tv+ ontvanger": "KPN TV+"}
+    assert renamed_keys({}, current) == {
+        "kpn_tv_ontvanger": ResolvedApp("kpn_tv", "KPN TV+")
+    }
+
+
+def test_renamed_keys_changed_and_removed_override() -> None:
+    assert renamed_keys({"pc": "Gaming PC"}, {"pc": "Desktop"}) == {
+        "gaming_pc": ResolvedApp("desktop", "Desktop")
+    }
+    # Override keys are casefolded, so the raw value's case is lost here;
+    # the device restores the display name when the TV reports "PC" again.
+    assert renamed_keys({"pc": "Gaming PC"}, {}) == {
+        "gaming_pc": ResolvedApp("pc", "pc")
+    }
+
+
+def test_renamed_keys_override_of_builtin() -> None:
+    assert renamed_keys({}, {"com.netflix.ninja": "Netflix NL"}) == {
+        "netflix": ResolvedApp("netflix_nl", "Netflix NL")
+    }
+
+
+@pytest.mark.parametrize(
+    ("previous", "current"),
+    [
+        ({}, {}),
+        ({"pc": "Gaming PC"}, {"pc": "Gaming PC"}),
+        ({}, {"pc": "PC"}),  # same key
+        ({}, {"sonos beam": None}),  # newly ignored
+        ({"sonos beam": None}, {}),  # no longer ignored
+    ],
+)
+def test_renamed_keys_no_rename(previous: dict, current: dict) -> None:
+    assert renamed_keys(previous, current) == {}
+
+
+def test_renamed_keys_old_key_still_in_use() -> None:
+    # Both values counted as "TV"; only one moves, so the total can't be split.
+    previous = {"hdmi 1": "TV", "hdmi 2": "TV"}
+    current = {"hdmi 1": "Console", "hdmi 2": "TV"}
+    assert renamed_keys(previous, current) == {}
+
+
+def test_renamed_keys_old_key_split_over_new_names() -> None:
+    previous = {"hdmi 1": "TV", "hdmi 2": "TV"}
+    current = {"hdmi 1": "Console", "hdmi 2": "Decoder"}
+    assert renamed_keys(previous, current) == {}
+
+
+def test_renamed_keys_merge_into_one_name() -> None:
+    current = {"hdmi 1": "TV", "hdmi 2": "TV"}
+    assert renamed_keys({}, current) == {
+        "hdmi_1": ResolvedApp("tv", "TV"),
+        "hdmi_2": ResolvedApp("tv", "TV"),
+    }

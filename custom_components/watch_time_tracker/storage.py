@@ -1,7 +1,7 @@
 """Persistent watch-time totals."""
 
-from collections.abc import Callable
-from typing import Any, TypedDict
+from collections.abc import Callable, Mapping
+from typing import Any, NotRequired, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -29,6 +29,8 @@ class StoredData(TypedDict):
 
     devices: dict[str, Totals]
     combined: Totals
+    name_overrides: NotRequired[str]
+    """Override text the totals were last keyed with."""
 
 
 class _TotalsStore(Store[StoredData]):
@@ -57,6 +59,19 @@ class TotalsStore:
                 "devices": data.get("devices", {}),
                 "combined": data.get("combined", {}),
             }
+            if (overrides := data.get("name_overrides")) is not None:
+                self._data["name_overrides"] = overrides
+
+    @property
+    def name_overrides(self) -> str | None:
+        """Override text the totals were last keyed with; None if not recorded."""
+        return self._data.get("name_overrides")
+
+    @name_overrides.setter
+    def name_overrides(self, text: str) -> None:
+        if self._data.get("name_overrides") != text:
+            self._data["name_overrides"] = text
+            self.schedule_save()
 
     @property
     def combined(self) -> Totals:
@@ -84,12 +99,8 @@ class TotalsStore:
         Returns (subentry_id, key) per deleted total; subentry_id is None for a
         combined total. Totals with recorded time are always kept.
         """
-        scopes: list[tuple[str | None, Totals]] = [
-            *self._data["devices"].items(),
-            (None, self._data["combined"]),
-        ]
         removed: list[tuple[str | None, str]] = []
-        for subentry_id, totals in scopes:
+        for subentry_id, totals in self._scopes():
             for key in [
                 key
                 for key, total in totals.items()
@@ -100,6 +111,33 @@ class TotalsStore:
         if removed:
             self.schedule_save()
         return removed
+
+    def rename_sources(
+        self, renames: Mapping[str, tuple[str, str]]
+    ) -> list[tuple[str | None, str, str]]:
+        """Move totals from old keys to new (key, display name) pairs.
+
+        Minutes are added to an existing total under the new key. Returns
+        (subentry_id, old key, new key) per moved total; subentry_id is None for
+        a combined total.
+        """
+        moved: list[tuple[str | None, str, str]] = []
+        for subentry_id, totals in self._scopes():
+            for old_key, (new_key, display_name) in renames.items():
+                if (total := totals.pop(old_key, None)) is None:
+                    continue
+                target = totals.setdefault(
+                    new_key, {"display_name": display_name, "minutes": 0.0}
+                )
+                target["display_name"] = display_name
+                target["minutes"] += total["minutes"]
+                moved.append((subentry_id, old_key, new_key))
+        if moved:
+            self.schedule_save()
+        return moved
+
+    def _scopes(self) -> list[tuple[str | None, Totals]]:
+        return [*self._data["devices"].items(), (None, self._data["combined"])]
 
     def schedule_save(self) -> None:
         """Save within SAVE_DELAY_SECONDS."""

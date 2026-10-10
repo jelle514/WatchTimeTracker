@@ -62,7 +62,13 @@ com.google.android.apps.tv.launcherx = !ignore
 
 `!ignore` means the value is never counted, which is useful for home screens and launchers, or for an input you never use. If an ignored source never counted any time, its sensors are removed when the integration reloads after you save the options. Matching is case-insensitive.
 
-Changing a mapping after time has been counted starts a new sensor. The old sensor keeps its total and stops growing. Re-pick the source on the **Counting mode per source** screen if it used the other mode.
+Renaming a source keeps its watch time. For example, a cast app that shows up as **KPN TV+ ontvanger** can be shortened with:
+
+```
+KPN TV+ ontvanger = KPN TV+
+```
+
+When the integration reloads after you save, the existing sensors take the new name and keep their total, history and counting mode. Their entity IDs stay the same, so dashboards keep working; rename the entity ID in the entity settings if you like. If the new name already had its own sensor, the minutes are added to it and the old sensor is removed. Two exceptions start a new sensor instead, because a total can't be split: when another value still maps to the old name, or when the values of one name are mapped to different new names.
 
 ## Dashboard example: watch time donut
 

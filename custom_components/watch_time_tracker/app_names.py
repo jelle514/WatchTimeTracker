@@ -100,6 +100,29 @@ def resolve(raw: str, overrides: Mapping[str, str | None]) -> ResolvedApp | None
     return ResolvedApp(make_key(name), name)
 
 
+def renamed_keys(
+    previous: Mapping[str, str | None], current: Mapping[str, str | None]
+) -> dict[str, ResolvedApp]:
+    """Source keys whose raw values now resolve to another name.
+
+    Compares the resolution of every overridden raw value before and after an
+    override change. Returns old key -> new app. An old key is left out when
+    another known raw value still resolves to it, or when its values now go to
+    different names: its total can't be split.
+    """
+    moves: dict[str, ResolvedApp | None] = {}
+    for raw in previous.keys() | current.keys():
+        old, new = resolve(raw, previous), resolve(raw, current)
+        if old is None or new is None or old.key == new.key:
+            continue
+        if moves.setdefault(old.key, new) != new:
+            moves[old.key] = None
+    for raw in current.keys() | BUILTIN_NAMES.keys():
+        if (app := resolve(raw, current)) is not None and app.key in moves:
+            moves[app.key] = None
+    return {key: app for key, app in moves.items() if app is not None}
+
+
 def raw_app_values(
     media_attributes: Mapping[str, Any],
     extra_attributes: Mapping[str, Any] | None,

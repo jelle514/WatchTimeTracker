@@ -129,12 +129,17 @@ class TrackedDevice:
     @callback
     def ensure_source(self, key: str, display_name: str) -> None:
         """Make sure a total (and sensor) exists for a source key."""
-        self._names.setdefault(key, display_name)
+        self._names[key] = display_name
         if key not in self.totals:
             self.totals[key] = {"display_name": display_name, "minutes": 0.0}
             self._store.schedule_save()
             for listener in list(self._new_source_listeners):
                 listener(key)
+        elif self.totals[key]["display_name"] != display_name:
+            # The name mapping changed the name but not the key; sensors pick
+            # up the new name when they're next created.
+            self.totals[key]["display_name"] = display_name
+            self._store.schedule_save()
         self._hub.ensure_source(key, display_name)
 
     def display_name(self, key: str) -> str:
